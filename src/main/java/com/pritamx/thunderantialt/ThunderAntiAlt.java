@@ -1,6 +1,9 @@
 
 package com.pritamx.thunderantialt;
 
+import org.bukkit.ChatColor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -8,96 +11,123 @@ import java.io.File;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
+import java.util.Map;
+import java.util.logging.Level;
 
 public final class ThunderAntiAlt extends JavaPlugin {
 
     private static final String LICENSE_KEY =
             "TAlt-X9vQ-7mKp-4RzN-8wHd-2LcF-6sYt";
 
-    private Connection database;
-
-    public Connection getDatabase() {
-        return database;
-    }
+    private Connection connection;
+    private FileConfiguration messages;
+    private final Object databaseLock = new Object();
 
     @Override
     public void onEnable() {
-        if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
-            getLogger().severe("Cannot create plugin folder.");
-            getServer().getPluginManager().disablePlugin(this);
-            return;
-        }
-
-        File licenseFile = new File(getDataFolder(), "license.yml");
-
-        if (!licenseFile.exists()) {
-            try {
-                YamlConfiguration license = new YamlConfiguration();
-                license.set("license-key", "");
-                license.save(licenseFile);
-            } catch (IOException e) {
-                getLogger().severe("Cannot create license.yml.");
-            }
-
-            getLogger().warning("Add your license key to license.yml.");
-            getServer().getPluginManager().disablePlugin(this);
-            return;
-        }
-
-        String key = YamlConfiguration.loadConfiguration(licenseFile)
-                .getString("license-key", "").trim();
-
-        if (!LICENSE_KEY.equals(key)) {
-            getLogger().severe("Invalid license. Plugin disabled.");
-            getServer().getPluginManager().disablePlugin(this);
-            return;
-        }
-
         saveDefaultConfig();
+        saveResourceIfMissing("messages.yml");
 
-        if (!new File(getDataFolder(), "messages.yml").exists()) {
-            saveResource("messages.yml", false);
-        }
-
-        if (!openDatabase()) {
+        if (!checkLicense()) {
+            getLogger().severe("License validation failed. Plugin disabled.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
-        if (getCommand("thunderantialt") != null) {
-            getCommand("thunderantialt").setExecutor(
-                    new AdminCommands(this));
-        } else {
-            getLogger().severe(
-                    "Command thunderantialt is missing from plugin.yml!");
+        loadMessages();
+
+        try {
+            openDatabase();
+            createTables();
+        } catch (Exception exception) {
+            getLogger().log(Level.SEVERE, "Database initialization failed.", exception);
+            closeDatabase();
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
-        getServer().getPluginManager().registerEvents(
-                new AccountListener(this), this);
-
-        getLogger().info("ThunderAntiAlt enabled!");
+        getLogger().info("ThunderAntiAlt enabled successfully.");
     }
 
-    private boolean openDatabase() {
-        try {
-            File file = new File(getDataFolder(), "accounts.db");
+    private void saveResourceIfMissing(String name) {
+        File file = new File(getDataFolder(), name);
+        if (!file.exists()) {
+            saveResource(name, false);
+        }
+    }
 
-            database = DriverManager.getConnection(
-                    "jdbc:sqlite:" + file.getAbsolutePath());
+    private boolean checkLicense() {
+        File file = new File(getDataFolder(), "license.yml");
 
-            try (Statement statement = database.createStatement()) {
+        if (!file.exists()) {
+            try {
+                if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+                    getLogger().severe("Could not create plugin directory.");
+                    return false;
+                }
+
+                YamlConfiguration license = new YamlConfiguration();
+                license.set("license-key", LICENSE_KEY);
+                license.save(file);
+            } catch (IOException exception) {
+                getLogger().log(Level.SEVERE, "Could not create license.yml.", exception);
+                return false;
+            }
+        }
+
+        FileConfiguration license = YamlConfiguration.loadConfiguration(file);
+        String suppliedKey = license.getString("license-key", "");
+
+        return LICENSE_KEY.equals(suppliedKey);
+    }
+
+    private void loadMessages() {
+        File file = new File(getDataFolder(), "messages.yml");
+        messages = YamlConfiguration.loadConfiguration(file);
+    }
+
+    public void reloadPluginSettings() {
+        reloadConfig();
+        loadMessages();
+    }
+
+    private void openDatabase() throws SQLException {
+        String configuredPath = getConfig().getString(
+                "database.file", "accounts.db"
+        );
+
+        File databaseFile = new File(getDataFolder(), configuredPath);
+
+        File parent = databaseFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new SQLException("Could not create database directory.");
+        }
+
+        connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + databaseFile.getAbsolutePath()
+        );
+
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = ON");
+            statement.execute("PRAGMA busy_timeout = 5000");
+        }
+    }
+
+    private void createTables() throws SQLException {
+        synchronized (databaseLock) {
+            try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS accounts (
                         uuid TEXT PRIMARY KEY,
                         username TEXT NOT NULL,
                         ip_address TEXT,
-                        account_limit INTEGER DEFAULT 1,
-                        approved INTEGER DEFAULT 0,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        account_limit INTEGER NOT NULL DEFAULT 1,
+                        approved INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
                         last_seen TEXT
                     )
                     """);
@@ -105,39 +135,160 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS audit_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        player_uuid TEXT,
+                        uuid TEXT,
                         username TEXT,
                         ip_address TEXT,
-                        event TEXT NOT NULL,
+                        action TEXT NOT NULL,
                         details TEXT,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                        created_at TEXT NOT NULL
                     )
                     """);
 
                 statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS authorized_accounts (
                         owner_uuid TEXT NOT NULL,
-                        account_uuid TEXT NOT NULL,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (owner_uuid, account_uuid)
+                        authorized_uuid TEXT PRIMARY KEY,
+                        created_at TEXT NOT NULL
                     )
                     """);
+
+                statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS account_bans (
+                        player_uuid TEXT PRIMARY KEY,
+                        username TEXT NOT NULL,
+                        reason TEXT,
+                        banned_by TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                    """);
+
+                statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS ip_limits (
+                        ip_address TEXT PRIMARY KEY,
+                        max_accounts INTEGER NOT NULL,
+                        updated_by TEXT,
+                        updated_at TEXT NOT NULL
+                    )
+                    """);
+
+                statement.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS idx_accounts_ip " +
+                        "ON accounts(ip_address)"
+                );
+
+                statement.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS idx_audit_uuid " +
+                        "ON audit_logs(uuid)"
+                );
+
+                statement.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS idx_audit_username " +
+                        "ON audit_logs(username)"
+                );
+            }
+        }
+    }
+
+    public Connection getDatabaseConnection() {
+        return connection;
+    }
+
+    public Object getDatabaseLock() {
+        return databaseLock;
+    }
+
+    public String getMessage(String key) {
+        String prefix = messages == null
+                ? ""
+                : messages.getString("prefix", "");
+
+        String message = messages == null
+                ? key
+                : messages.getString("messages." + key, key);
+
+        return color(prefix + message);
+    }
+
+    public String getMessage(String key, Map<String, String> replacements) {
+        String message = getMessage(key);
+
+        if (replacements != null) {
+            for (Map.Entry<String, String> entry : replacements.entrySet()) {
+                message = message.replace(
+                        "{" + entry.getKey() + "}",
+                        entry.getValue() == null ? "" : entry.getValue()
+                );
+            }
+        }
+
+        return message;
+    }
+
+    public void sendMessage(CommandSender sender, String key) {
+        sender.sendMessage(getMessage(key));
+    }
+
+    public void sendMessage(
+            CommandSender sender,
+            String key,
+            Map<String, String> replacements
+    ) {
+        sender.sendMessage(getMessage(key, replacements));
+    }
+
+    public String color(String text) {
+        return ChatColor.translateAlternateColorCodes('&', text);
+    }
+
+    public void logAudit(
+            String uuid,
+            String username,
+            String ipAddress,
+            String action,
+            String details
+    ) {
+        synchronized (databaseLock) {
+            if (connection == null) {
+                getLogger().warning("Audit event could not be stored: " + action);
+                return;
             }
 
-            return true;
-        } catch (SQLException e) {
-            getLogger().severe("Database error: " + e.getMessage());
-            return false;
+            String sql = """
+                INSERT INTO audit_logs
+                (uuid, username, ip_address, action, details, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """;
+
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, uuid);
+                statement.setString(2, username);
+                statement.setString(3, ipAddress);
+                statement.setString(4, action);
+                statement.setString(5, details);
+                statement.setString(6, Instant.now().toString());
+                statement.executeUpdate();
+            } catch (SQLException exception) {
+                getLogger().log(Level.SEVERE, "Could not write audit log.", exception);
+            }
         }
     }
 
     @Override
     public void onDisable() {
-        if (database != null) {
-            try {
-                database.close();
-            } catch (SQLException e) {
-                getLogger().warning("Could not close database.");
+        closeDatabase();
+        getLogger().info("ThunderAntiAlt disabled.");
+    }
+
+    private void closeDatabase() {
+        synchronized (databaseLock) {
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException exception) {
+                    getLogger().log(Level.WARNING, "Could not close database.", exception);
+                } finally {
+                    connection = null;
+                }
             }
         }
     }
