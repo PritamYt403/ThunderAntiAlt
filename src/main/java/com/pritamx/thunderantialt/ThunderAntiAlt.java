@@ -23,10 +23,14 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
 
     private Connection database;
 
+    public Connection getDatabase() {
+        return database;
+    }
+
     @Override
     public void onEnable() {
         if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
-            getLogger().severe("Could not create plugin folder.");
+            getLogger().severe("Cannot create plugin folder.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -39,22 +43,19 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
                 license.set("license-key", "");
                 license.save(licenseFile);
             } catch (IOException e) {
-                getLogger().severe("Could not create license.yml.");
+                getLogger().severe("Cannot create license.yml.");
             }
 
-            getLogger().warning(
-                    "Enter your license key in plugins/ThunderAntiAlt/license.yml");
+            getLogger().warning("Add your license key to license.yml.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
-        YamlConfiguration license =
-                YamlConfiguration.loadConfiguration(licenseFile);
+        String key = YamlConfiguration.loadConfiguration(licenseFile)
+                .getString("license-key", "").trim();
 
-        String enteredKey = license.getString("license-key", "");
-
-        if (!LICENSE_KEY.equals(enteredKey.trim())) {
-            getLogger().severe("Invalid license key. Plugin disabled.");
+        if (!LICENSE_KEY.equals(key)) {
+            getLogger().severe("Invalid license. Plugin disabled.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -66,7 +67,6 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
         }
 
         if (!openDatabase()) {
-            getLogger().severe("Database unavailable. Plugin disabled.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -75,15 +75,17 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
             getCommand("thunderantialt").setExecutor(this);
         }
 
-        getLogger().info("ThunderAntiAlt enabled successfully!");
+        getServer().getPluginManager().registerEvents(
+                new AccountListener(this), this);
+
+        getLogger().info("ThunderAntiAlt enabled!");
     }
 
     private boolean openDatabase() {
         try {
-            File dbFile = new File(getDataFolder(), "accounts.db");
-
+            File file = new File(getDataFolder(), "accounts.db");
             database = DriverManager.getConnection(
-                    "jdbc:sqlite:" + dbFile.getAbsolutePath());
+                    "jdbc:sqlite:" + file.getAbsolutePath());
 
             try (Statement statement = database.createStatement()) {
                 statement.executeUpdate("""
@@ -141,8 +143,7 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
 
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             reloadConfig();
-            sender.sendMessage(color(
-                    "&aThunderAntiAlt configuration reloaded."));
+            sender.sendMessage(color("&aConfiguration reloaded."));
             return true;
         }
 
@@ -184,5 +185,4 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
             }
         }
     }
-  }
-
+}
