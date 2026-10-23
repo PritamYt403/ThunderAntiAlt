@@ -1,4 +1,3 @@
-
 package com.pritamx.thunderantialt;
 
 import org.bukkit.Bukkit;
@@ -14,7 +13,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.UUID;
 import java.util.logging.Level;
 
 public final class AccountListener implements Listener {
@@ -28,6 +26,7 @@ public final class AccountListener implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerLogin(PlayerLoginEvent event) {
         Player player = event.getPlayer();
+
         String uuid = player.getUniqueId().toString();
         String username = player.getName();
 
@@ -52,12 +51,16 @@ public final class AccountListener implements Listener {
                 return;
             }
 
+            boolean previousAutoCommit = true;
+
             try {
+                previousAutoCommit = connection.getAutoCommit();
                 connection.setAutoCommit(false);
 
                 if (isBanned(connection, uuid)) {
                     connection.rollback();
-                    connection.setAutoCommit(true);
+                    connection.setAutoCommit(previousAutoCommit);
+
                     deny(event, "account-banned");
                     audit(uuid, username, ip, "LOGIN_BLOCKED",
                             "Account is banned");
@@ -65,22 +68,24 @@ public final class AccountListener implements Listener {
                 }
 
                 AccountRecord account = getAccount(connection, uuid);
+                PendingRecord pending = getPending(connection, uuid);
 
-                // Main UUID is permanent and can reconnect from a new IP.
+                // Main accounts are allowed to reconnect from a new IP.
                 if (isMainUuid(connection, uuid)) {
-                    updateBinding(connection, uuid, username, ip, true);
+                    ensureAccount(connection, uuid, username, ip, true);
                     saveMainAccount(connection, ip, uuid, username);
-                    updateLastSeen(connection, uuid, username);
+                    updatePendingStatus(connection, uuid, "APPROVED");
 
                     connection.commit();
-                    connection.setAutoCommit(true);
+                    connection.setAutoCommit(previousAutoCommit);
 
                     audit(uuid, username, ip, "MAIN_LOGIN",
                             "Main account login");
                     return;
                 }
 
-                // Explicitly approved alt accounts remain approved.
+                // Previously approved accounts must still have an
+                // explicit authorization relationship.
                 if (isApprovedAlt(connection, uuid)) {
                     registerAuthorizedAccount(
                             connection, uuid, username, ip);
@@ -88,68 +93,69 @@ public final class AccountListener implements Listener {
                     updatePendingStatus(connection, uuid, "APPROVED");
 
                     connection.commit();
-                    connection.setAutoCommit(true);
+                    connection.setAutoCommit(previousAutoCommit);
 
                     audit(uuid, username, ip, "AUTHORIZED_LOGIN",
                             "Approved alt account login");
                     return;
                 }
 
-                // Existing pending or denied accounts must not bypass review.
-                PendingRecord pending = getPending(connection, uuid);
-
+                // Pending or denied accounts must not bypass review.
                 if (pending != null) {
                     updatePendingAttempt(
                             connection, uuid, username, ip);
 
                     connection.commit();
-                    connection.setAutoCommit(true);
+                    connection.setAutoCommit(previousAutoCommit);
 
                     deny(event, "approval-required");
 
                     audit(uuid, username, ip, "LOGIN_BLOCKED",
                             "Alt account status: " + pending.status);
+
                     alertAdmins(username,
                             "Alt account requires approval");
                     return;
                 }
 
-                // Legacy account: only trust it if it is a known main UUID
-                // or has an explicit authorized_accounts relationship.
+                // A legacy record alone is not enough to authorize
+                // an account. The authorization relationship is required.
                 if (account != null
                         && isAuthorizedAlt(connection, uuid)) {
                     registerAuthorizedAccount(
                             connection, uuid, username, ip);
 
                     connection.commit();
-                    connection.setAutoCommit(true);
+                    connection.setAutoCommit(previousAutoCommit);
+
+                    audit(uuid, username, ip, "AUTHORIZED_LOGIN",
+                            "Existing authorized account");
                     return;
                 }
 
                 String mainUuid = findMainUuid(connection, ip, uuid);
 
-                if (mainUuid == null) {
-                    // A UUID already present in the database must not
-                    // silently become a new main account.
-                    if (account != null) {
-                        mainUuid = findMainForAccount(connection, uuid);
-                    }
-
-                    if (mainUuid == null && account == null) {
-                        insertAccount(connection, uuid, username, ip, true);
-                        saveMainAccount(connection, ip, uuid, username);
-
-                        connection.commit();
-                        connection.setAutoCommit(true);
-
-                        audit(uuid, username, ip,
-                                "MAIN_ACCOUNT_REGISTERED",
-                                "First account registered for IP");
-                        return;
-                    }
+                if (mainUuid == null && account != null) {
+                    mainUuid = findMainForAccount(connection, uuid);
                 }
 
-                if (mainUuid == null) {
+                // First account seen from an IP becomes its main account.
+                if (mainUuid == null && account == null) {
+                    insertAccount(connection, uuid, username, ip, true);
+                    saveMainAccount(connection, ip, uuid, username);
+
+                    connection.commit();
+                    connection.setAutoCommit(previousAutoCommit);
+
+                    audit(uuid, username, ip,
+                            "MAIN_ACCOUNT_REGISTERED",
+                            "First account registered for IP");
+                    return;
+                }
+
+                if (mainUuid == null
+                        || mainUuid.isBlank()
+                        || "UNKNOWN".equalsIgnoreCase(mainUuid)) {
                     mainUuid = "UNKNOWN";
                 }
 
@@ -163,7 +169,7 @@ public final class AccountListener implements Listener {
                         connection, uuid, username, ip, mainUuid);
 
                 connection.commit();
-                connection.setAutoCommit(true);
+                connection.setAutoCommit(previousAutoCommit);
 
                 deny(event, "approval-required");
 
@@ -177,7 +183,7 @@ public final class AccountListener implements Listener {
             } catch (SQLException exception) {
                 try {
                     connection.rollback();
-                    connection.setAutoCommit(true);
+                    connection.setAutoCommit(previousAutoCommit);
                 } catch (SQLException rollbackException) {
                     exception.addSuppressed(rollbackException);
                 }
@@ -195,8 +201,9 @@ public final class AccountListener implements Listener {
     private boolean isBanned(Connection connection, String uuid)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT 1 FROM account_bans WHERE player_uuid = ?")) {
+                "SELECT 1 FROM account_bans WHERE player_uuid = ? LIMIT 1")) {
             statement.setString(1, uuid);
+
             try (ResultSet result = statement.executeQuery()) {
                 return result.next();
             }
@@ -205,9 +212,14 @@ public final class AccountListener implements Listener {
 
     private boolean isMainUuid(Connection connection, String uuid)
             throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT 1 FROM ip_main_accounts WHERE main_uuid = ? LIMIT 1")) {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT 1
+                FROM ip_main_accounts
+                WHERE main_uuid = ?
+                LIMIT 1
+                """)) {
             statement.setString(1, uuid);
+
             try (ResultSet result = statement.executeQuery()) {
                 return result.next();
             }
@@ -220,8 +232,10 @@ public final class AccountListener implements Listener {
                 SELECT 1
                 FROM authorized_accounts
                 WHERE authorized_uuid = ?
+                LIMIT 1
                 """)) {
             statement.setString(1, uuid);
+
             try (ResultSet result = statement.executeQuery()) {
                 return result.next();
             }
@@ -230,16 +244,7 @@ public final class AccountListener implements Listener {
 
     private boolean isAuthorizedAlt(Connection connection, String uuid)
             throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT 1
-                FROM authorized_accounts
-                WHERE authorized_uuid = ?
-                """)) {
-            statement.setString(1, uuid);
-            try (ResultSet result = statement.executeQuery()) {
-                return result.next();
-            }
-        }
+        return isApprovedAlt(connection, uuid);
     }
 
     private String findMainUuid(
@@ -280,7 +285,8 @@ public final class AccountListener implements Listener {
                 if (result.next()) {
                     String mainUuid = result.getString("uuid");
 
-                    if (!mainUuid.equals(excludedUuid)) {
+                    if (mainUuid != null
+                            && !mainUuid.equals(excludedUuid)) {
                         return mainUuid;
                     }
                 }
@@ -400,7 +406,8 @@ public final class AccountListener implements Listener {
                     main_uuid = excluded.main_uuid,
                     last_seen = excluded.last_seen,
                     attempts = pending_alt_accounts.attempts + 1
-                WHERE pending_alt_accounts.status != 'APPROVED'
+                WHERE pending_alt_accounts.status NOT IN
+                    ('APPROVED', 'DENIED')
                 """)) {
             statement.setString(1, uuid);
             statement.setString(2, username);
@@ -440,6 +447,18 @@ public final class AccountListener implements Listener {
             statement.setString(1, status);
             statement.setString(2, uuid);
             statement.executeUpdate();
+        }
+    }
+
+    private void ensureAccount(
+            Connection connection, String uuid, String username,
+            String ip, boolean approved) throws SQLException {
+        AccountRecord account = getAccount(connection, uuid);
+
+        if (account == null) {
+            insertAccount(connection, uuid, username, ip, approved);
+        } else {
+            updateBinding(connection, uuid, username, ip, approved);
         }
     }
 
@@ -502,21 +521,6 @@ public final class AccountListener implements Listener {
             statement.setInt(3, approved ? 1 : 0);
             statement.setString(4, Instant.now().toString());
             statement.setString(5, uuid);
-            statement.executeUpdate();
-        }
-    }
-
-    private void updateLastSeen(
-            Connection connection, String uuid, String username)
-            throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                UPDATE accounts
-                SET username = ?, last_seen = ?
-                WHERE uuid = ?
-                """)) {
-            statement.setString(1, username);
-            statement.setString(2, Instant.now().toString());
-            statement.setString(3, uuid);
             statement.executeUpdate();
         }
     }
