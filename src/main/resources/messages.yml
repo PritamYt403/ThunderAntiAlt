@@ -1,1 +1,20 @@
 
+prefix: "&8[&6ThunderAntiAlt&8] "
+
+messages:
+  player-only: "&cThis command can only be used by a player."
+  no-permission: "&cYou don't have permission."
+  account-limit: "&cYour IP has reached the account limit."
+  approval-required: "&eYour new IP requires admin approval."
+  account-registered: "&aYour account has been registered."
+  account-reset: "&aAccount binding reset successfully."
+  account-authorized: "&aExtra account authorized successfully."
+  account-removed: "&aExtra account authorization removed."
+  player-not-found: "&cPlayer not found."
+  invalid-number: "&cPlease enter a valid number."
+  reload-success: "&aConfiguration reloaded."
+  database-error: "&cDatabase error. Contact an administrator."
+  admin-new-account: "&eNew account detected: &f{player}"
+  admin-blocked-login: "&cBlocked login attempt: &f{player}"
+  usage: "&eUsage: /thunderantialt <info|lookup|logs|adduser|removeuser|reset|unban|limit|reload>"
+  
