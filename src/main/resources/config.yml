@@ -1,22 +1,36 @@
 
 settings:
+  # Default maximum number of accounts allowed per IP
   max-accounts-per-ip: 1
+
+  # New accounts require admin approval
   require-new-ip-approval: true
+
+  # Notify online admins about security events
   alert-admins: true
+
+  # Log blocked login attempts
   log-blocked-attempts: true
+
+  # Log successful account logins
   log-successful-logins: true
 
 database:
+  # Relative path inside the plugin data folder
   file: accounts.db
 
 security:
+  # Deny login if the database cannot be checked
   fail-closed-on-database-error: true
+
+  # Mask IP addresses in general player information
   mask-ip-in-general-info: true
 
 proxy:
+  # Proxy integration is not implemented by this setting alone
   enabled: false
   type: NONE
 
 floodgate:
+  # Floodgate integration is not implemented by this setting alone
   enabled: false
-  
