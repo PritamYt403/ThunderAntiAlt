@@ -29,14 +29,26 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
 
       - name: Build Paper 1.21.x
         run: mvn --batch-mode --no-transfer-progress clean package
 
       - name: Prepare JAR
+        shell: bash
         run: |
+          set -e
           mkdir -p output
-          cp target/ThunderAntiAlt.jar output/ThunderAntiAlt-1.21.jar
+          echo "JAR files generated:"
+          find target -maxdepth 1 -type f -name "*.jar" -print
+          JAR=$(find target -maxdepth 1 -type f -name "*.jar" \
+            ! -name "*-sources.jar" ! -name "*-javadoc.jar" \
+            | head -n 1)
+          if [ -z "$JAR" ]; then
+            echo "ERROR: No JAR generated. Check Maven build and pom.xml."
+            exit 1
+          fi
+          cp "$JAR" output/ThunderAntiAlt-1.21.jar
 
       - name: Upload Paper 1.21.x JAR
         uses: actions/upload-artifact@v4
@@ -59,6 +71,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+          cache: maven
 
       - name: Build Paper 26.x
         run: |
@@ -68,9 +81,20 @@ jobs:
             clean package
 
       - name: Prepare JAR
+        shell: bash
         run: |
+          set -e
           mkdir -p output
-          cp target/ThunderAntiAlt.jar output/ThunderAntiAlt-26x.jar
+          echo "JAR files generated:"
+          find target -maxdepth 1 -type f -name "*.jar" -print
+          JAR=$(find target -maxdepth 1 -type f -name "*.jar" \
+            ! -name "*-sources.jar" ! -name "*-javadoc.jar" \
+            | head -n 1)
+          if [ -z "$JAR" ]; then
+            echo "ERROR: No JAR generated. Check Maven build and pom.xml."
+            exit 1
+          fi
+          cp "$JAR" output/ThunderAntiAlt-26x.jar
 
       - name: Upload Paper 26.x JAR
         uses: actions/upload-artifact@v4
