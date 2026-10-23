@@ -1,96 +1,86 @@
+⚡ ThunderAntiAlt
 
-# ThunderAntiAlt
+Minecraft Alternate Account Management & Authorization Plugin
+Made by Pritam
 
-**Advanced Anti-Alt Account Protection System**  
-Made by **Pritam**
+ThunderAntiAlt is a Minecraft server plugin designed to help server administrators manage alternate accounts, review account authorization requests, enforce configurable IP-based account limits, and maintain account activity logs.
 
-ThunderAntiAlt is a Paper plugin designed to limit alternate accounts and manage account access using persistent UUID/IP records and SQLite storage.
+✨ Features
 
-## Features
+- SQLite database for persistent account records
+- Main-account and alternate-account tracking
+- Pending alternate-account approval workflow
+- Admin approval and denial controls
+- Configurable account limits per IP address
+- Account removal and information lookup
+- Audit logs for account-related actions
+- Admin notifications for account events
+- Permission-based administrative access
+- Configurable messages in "messages.yml"
+- Settings managed through "config.yml"
+- Database error handling with fail-closed configuration
+- License-key verification
 
-- Configurable account limit per IP
-- Persistent player UUID and IP binding
-- New-account approval system
-- Admin-authorized additional accounts
-- Persistent account bans and unbans
-- Reset player IP binding
-- Per-player IP account limits
-- Account lookup and audit logs
-- Admin alerts for account activity
-- SQLite database persistence
-- Configurable messages in `messages.yml`
-- IP masking in general account information
+📥 Installation
 
-## Requirements
+1. Download the compatible "ThunderAntiAlt.jar" from the project's GitHub Releases or Actions artifacts.
+2. Stop your Minecraft server.
+3. Upload the JAR to your server's "plugins/" directory.
+4. Start the server to generate the plugin configuration files.
+5. Configure "config.yml", "messages.yml", and "license.yml".
+6. Add your valid license key to "license.yml".
+7. Restart the server and check the console for startup errors.
 
-- Java 21
-- Paper 1.21.x
+Important: The plugin will not enable if license verification fails or database initialization fails.
 
-The project builds against Paper API 1.21.4. Other Minecraft/Paper versions require compatibility testing.
+🎮 Admin Commands
 
-## Installation
+The intended administrative command set is:
 
-1. Download `ThunderAntiAlt.jar` from the successful GitHub Actions build artifact.
-2. Put the JAR in your server's `plugins` folder.
-3. Start or restart the server.
-4. Configure the generated files in `plugins/ThunderAntiAlt/`.
+Command| Description
+"/ta reload"| Reload plugin settings
+"/ta adduser"| Add or register an account through the admin workflow
+"/ta info"| View account information
+"/ta pending"| View pending account requests
+"/ta approve"| Approve an alternate-account request
+"/ta deny"| Deny an alternate-account request
+"/ta removeuser"| Remove an account
+"/ta limit"| Manage account limits
 
-## Commands
+Use "/ta" without arguments to display the command help. Check the installed version's command usage for required arguments.
 
-| Command | Description |
-|---|---|
-| `/ta help` | Show available commands |
-| `/ta info <player>` | Show general account information |
-| `/ta lookup <player>` | Look up account details, including IP |
-| `/ta logs <player>` | View account audit history |
-| `/ta approve <player>` | Approve a pending account |
-| `/ta adduser <player> <authorized-player>` | Authorize an additional account |
-| `/ta removeuser <player> <authorized-player>` | Remove an account authorization |
-| `/ta reset <player>` | Reset the player's IP binding |
-| `/ta ban <player> [reason]` | Ban an account |
-| `/ta unban <player>` | Remove an account ban |
-| `/ta limit <player> <number>` | Set a player's IP account limit |
-| `/ta clearlogs <player>` | Clear the player's audit history |
-| `/ta reload` | Reload plugin settings |
+⚙️ Configuration
 
-Use `/ta help` in-game for command usage.
+The plugin generates or uses these files:
 
-## Permissions
+- "config.yml" — database path, account limits, and security settings
+- "messages.yml" — configurable messages
+- "license.yml" — license key configuration
+- SQLite database — persistent account and audit information
 
-- `thunderantialt.admin` — access administration commands; default: operators
-- `thunderantialt.bypass` — bypass account restrictions; default: nobody
+Back up your database and configuration files before updating the plugin.
 
-## Configuration
+🔐 Security Notes
 
-The default configuration limits each IP to one account and requires approval for new accounts.
+- Account records are stored persistently in SQLite.
+- Database failures should be handled according to the configured fail-closed policy.
+- IP addresses can be shared by multiple legitimate players, such as people using the same household or network.
+- IP-based limits alone cannot reliably identify a player's physical device.
+- Protect your license key and database backups.
 
-When `require-new-ip-approval` is enabled, a new account may be denied until an administrator approves it with `/ta approve <player>`.
+🛠️ Building from Source
 
-Back up the plugin's database before making manual changes.
+Requirements depend on the target Minecraft version and the project's Maven configuration.
 
-## Build from Source
-
-Install Java 21 and Maven, then run:
-
-```bash
 mvn clean package
-```
 
-The output JAR is:
+After a successful build, check the project's "target/" directory for the generated JAR.
 
-```text
-target/ThunderAntiAlt.jar
-```
+👨‍💻 Developer
 
-GitHub Actions can build the plugin automatically. Download the JAR from the workflow's **Artifacts** section after a successful run.
+Pritam
+Project: ThunderAntiAlt
 
-## Security Notes
+📄 License
 
-- `/ta lookup` can reveal full IP addresses. Restrict admin permission to trusted staff.
-- IP-based restrictions are not reliable proof that two players are the same person; players may share networks or use different networks.
-- Proxy and Floodgate configuration options are placeholders; integrations are not implemented yet.
-- A license check embedded in a public plugin cannot securely protect a secret key.
-
-## License
-
-Review the repository's license before redistributing or modifying this project.
+Refer to the repository's license and distribution terms before redistributing the plugin.
