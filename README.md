@@ -1,87 +1,96 @@
+
 # ThunderAntiAlt
 
-**A Minecraft account/IP restriction plugin by Pritam.**
+**Advanced Anti-Alt Account Protection System**  
+Made by **Pritam**
 
-ThunderAntiAlt is intended for Paper servers using the Bukkit/Paper API. It stores account bindings and audit events in a local SQLite database.
+ThunderAntiAlt is a Paper plugin designed to limit alternate accounts and manage account access using persistent UUID/IP records and SQLite storage.
 
-## Current features
+## Features
 
-- SQLite persistence for account records and audit events
-- Configurable default account limit per IP
-- Optional administrator approval for new accounts
-- IP binding checks for previously registered accounts
-- Admin commands for account lookup, approval, logs, and authorization
-- Optional permission bypass
+- Configurable account limit per IP
+- Persistent player UUID and IP binding
+- New-account approval system
+- Admin-authorized additional accounts
+- Persistent account bans and unbans
+- Reset player IP binding
+- Per-player IP account limits
+- Account lookup and audit logs
+- Admin alerts for account activity
+- SQLite database persistence
+- Configurable messages in `messages.yml`
+- IP masking in general account information
 
 ## Requirements
 
 - Java 21
-- Maven 3.9+
-- Paper 1.21.x (the current `pom.xml` targets Paper API `1.21.4-R0.1-SNAPSHOT`)
+- Paper 1.21.x
 
-Compatibility with Minecraft 26.x and other server implementations has not yet been verified.
+The project builds against Paper API 1.21.4. Other Minecraft/Paper versions require compatibility testing.
 
-## Build
+## Installation
 
-Run from the repository root:
+1. Download `ThunderAntiAlt.jar` from the successful GitHub Actions build artifact.
+2. Put the JAR in your server's `plugins` folder.
+3. Start or restart the server.
+4. Configure the generated files in `plugins/ThunderAntiAlt/`.
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `/ta help` | Show available commands |
+| `/ta info <player>` | Show general account information |
+| `/ta lookup <player>` | Look up account details, including IP |
+| `/ta logs <player>` | View account audit history |
+| `/ta approve <player>` | Approve a pending account |
+| `/ta adduser <player> <authorized-player>` | Authorize an additional account |
+| `/ta removeuser <player> <authorized-player>` | Remove an account authorization |
+| `/ta reset <player>` | Reset the player's IP binding |
+| `/ta ban <player> [reason]` | Ban an account |
+| `/ta unban <player>` | Remove an account ban |
+| `/ta limit <player> <number>` | Set a player's IP account limit |
+| `/ta clearlogs <player>` | Clear the player's audit history |
+| `/ta reload` | Reload plugin settings |
+
+Use `/ta help` in-game for command usage.
+
+## Permissions
+
+- `thunderantialt.admin` — access administration commands; default: operators
+- `thunderantialt.bypass` — bypass account restrictions; default: nobody
+
+## Configuration
+
+The default configuration limits each IP to one account and requires approval for new accounts.
+
+When `require-new-ip-approval` is enabled, a new account may be denied until an administrator approves it with `/ta approve <player>`.
+
+Back up the plugin's database before making manual changes.
+
+## Build from Source
+
+Install Java 21 and Maven, then run:
 
 ```bash
 mvn clean package
 ```
 
-The plugin JAR will be created in `target/`.
-
-GitHub Actions can build the plugin automatically after the workflow file is added at `.github/workflows/build.yml`.
-
-## Install
-
-1. Build the JAR.
-2. Copy the JAR into the server's `plugins/` folder.
-3. Start the server once so the plugin can create its data folder and `license.yml`.
-4. Follow the license-key message in the server console, then restart the server.
-
-The plugin currently uses a hardcoded license key in its Java source. This is not a secure licensing system: anyone with source/JAR access may be able to extract it. Do not treat it as strong copy protection.
-
-## Configuration
-
-The plugin's bundled `config.yml` contains defaults for account limits, approval, alerts, logging, and security settings. Review it before use.
-
-Runtime data is intended to be stored under:
+The output JAR is:
 
 ```text
-plugins/ThunderAntiAlt/
-├── license.yml
-├── config.yml
-├── messages.yml
-└── accounts.db
+target/ThunderAntiAlt.jar
 ```
 
-`license.yml` and `accounts.db` are runtime-generated files; they should not be committed to the source repository.
+GitHub Actions can build the plugin automatically. Download the JAR from the workflow's **Artifacts** section after a successful run.
 
-## Commands
+## Security Notes
 
-The current command implementation includes:
+- `/ta lookup` can reveal full IP addresses. Restrict admin permission to trusted staff.
+- IP-based restrictions are not reliable proof that two players are the same person; players may share networks or use different networks.
+- Proxy and Floodgate configuration options are placeholders; integrations are not implemented yet.
+- A license check embedded in a public plugin cannot securely protect a secret key.
 
-```text
-/ta approve <player>
-/ta info <player>
-/ta lookup <player>
-/ta logs <player>
-/ta adduser <owner> <account>
-/ta removeuser <owner> <account>
-/ta reset <player>
-/ta unban <player>
-/ta limit <player> <number>
-/ta reload
-```
+## License
 
-Only grant `thunderantialt.admin` to trusted administrators. The `unban` command and some authorization/limit behaviors still need additional implementation and testing before relying on them for a production server.
-
-## Permissions
-
-- `thunderantialt.admin` — administrator commands; defaults to operators.
-- `thunderantialt.bypass` — bypasses the account checks; defaults to nobody.
-
-## Important status
-
-This project has not yet been verified by a successful build or a live-server test in this conversation. Test it on a private test server and keep backups of the plugin database before using it on a production server.
+Review the repository's license before redistributing or modifying this project.
