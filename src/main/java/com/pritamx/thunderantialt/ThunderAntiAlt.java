@@ -25,11 +25,12 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
     /*
      * SHA-256 digest of the configured license key.
-     * This avoids storing the key as readable text in this source file.
-     * It is not a substitute for remote license verification.
+     * This hides the plaintext key from this source file,
+     * but does not provide secure licensing against a determined
+     * person who can inspect or modify the plugin.
      */
     private static final String LICENSE_SHA256 =
-            "REPLACE_WITH_SHA256_HASH";
+            "dbcfbbcfdd08fe002be682f3927aa863b55870b877b18fcd43bb6a51af946ed0";
 
     private Connection connection;
     private FileConfiguration messages;
@@ -45,29 +46,40 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         File licenseFile = new File(getDataFolder(), "license.yml");
 
+        // First startup: create ONLY license.yml.
         if (!licenseFile.exists()) {
             YamlConfiguration license = new YamlConfiguration();
             license.set("license-key", "");
+
             try {
                 license.save(licenseFile);
             } catch (IOException exception) {
-                getLogger().log(Level.SEVERE, "Could not create license.yml.", exception);
+                getLogger().log(
+                        Level.SEVERE,
+                        "Could not create license.yml.",
+                        exception
+                );
                 disableSelf();
                 return;
             }
 
-            getLogger().warning("Created license.yml. Enter your license key and restart the server.");
+            getLogger().warning(
+                    "Created license.yml. Enter your license key and restart the server."
+            );
             disableSelf();
             return;
         }
 
+        // Validate the supplied key before creating other plugin files.
         if (!checkLicense(licenseFile)) {
-            getLogger().severe("License validation failed. Check license.yml.");
+            getLogger().severe(
+                    "License validation failed. Check plugins/ThunderAntiAlt/license.yml."
+            );
             disableSelf();
             return;
         }
 
-        // Only create normal plugin files after the license is valid.
+        // Valid license: create and load the remaining plugin files.
         saveDefaultConfig();
         saveResourceIfMissing("messages.yml");
         loadMessages();
@@ -76,7 +88,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
             openDatabase();
             createTables();
         } catch (Exception exception) {
-            getLogger().log(Level.SEVERE, "Database initialization failed.", exception);
+            getLogger().log(
+                    Level.SEVERE,
+                    "Database initialization failed.",
+                    exception
+            );
             closeDatabase();
             disableSelf();
             return;
@@ -86,7 +102,9 @@ public final class ThunderAntiAlt extends JavaPlugin {
         manager.registerEvents(new AccountListener(this), this);
 
         if (getCommand("thunderantialt") == null) {
-            getLogger().severe("Command 'thunderantialt' is missing from plugin.yml.");
+            getLogger().severe(
+                    "Command 'thunderantialt' is missing from plugin.yml."
+            );
             closeDatabase();
             disableSelf();
             return;
@@ -100,25 +118,34 @@ public final class ThunderAntiAlt extends JavaPlugin {
         FileConfiguration license = YamlConfiguration.loadConfiguration(file);
         String suppliedKey = license.getString("license-key", "").trim();
 
-        if (suppliedKey.isEmpty() || LICENSE_SHA256.startsWith("REPLACE_")) {
+        if (suppliedKey.isEmpty()) {
             return false;
         }
 
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(suppliedKey.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
+            byte[] hash = digest.digest(
+                    suppliedKey.getBytes(StandardCharsets.UTF_8)
+            );
+
+            StringBuilder hex = new StringBuilder(hash.length * 2);
 
             for (byte value : hash) {
                 hex.append(String.format("%02x", value & 0xff));
             }
 
-            return MessageDigest.isEqual(
-                    hex.toString().getBytes(StandardCharsets.US_ASCII),
-                    LICENSE_SHA256.getBytes(StandardCharsets.US_ASCII)
-            );
+            byte[] suppliedHash = hex.toString()
+                    .getBytes(StandardCharsets.US_ASCII);
+            byte[] expectedHash = LICENSE_SHA256
+                    .getBytes(StandardCharsets.US_ASCII);
+
+            return MessageDigest.isEqual(suppliedHash, expectedHash);
         } catch (Exception exception) {
-            getLogger().log(Level.SEVERE, "License validation error.", exception);
+            getLogger().log(
+                    Level.SEVERE,
+                    "License validation error.",
+                    exception
+            );
             return false;
         }
     }
@@ -129,6 +156,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
     private void saveResourceIfMissing(String name) {
         File file = new File(getDataFolder(), name);
+
         if (!file.exists()) {
             saveResource(name, false);
         }
@@ -145,7 +173,10 @@ public final class ThunderAntiAlt extends JavaPlugin {
     }
 
     private void openDatabase() throws SQLException {
-        String configuredPath = getConfig().getString("database.file", "accounts.db");
+        String configuredPath = getConfig().getString(
+                "database.file",
+                "accounts.db"
+        );
 
         if (configuredPath == null || configuredPath.isBlank()) {
             configuredPath = "accounts.db";
@@ -159,18 +190,26 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
             if (!databasePath.equals(basePath)
                     && !databasePath.startsWith(basePath + File.separator)) {
-                throw new SQLException("Database path must stay inside the plugin folder.");
+                throw new SQLException(
+                        "Database path must stay inside the plugin folder."
+                );
             }
         } catch (IOException exception) {
-            throw new SQLException("Could not resolve database path.", exception);
+            throw new SQLException(
+                    "Could not resolve database path.",
+                    exception
+            );
         }
 
         File parent = databaseFile.getParentFile();
+
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw new SQLException("Could not create database directory.");
         }
 
-        connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile.getAbsolutePath());
+        connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + databaseFile.getAbsolutePath()
+        );
 
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys = ON");
@@ -232,9 +271,20 @@ public final class ThunderAntiAlt extends JavaPlugin {
                     )
                     """);
 
-                statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_accounts_ip ON accounts(ip_address)");
-                statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_audit_uuid ON audit_logs(uuid)");
-                statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_audit_username ON audit_logs(username)");
+                statement.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS idx_accounts_ip " +
+                        "ON accounts(ip_address)"
+                );
+
+                statement.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS idx_audit_uuid " +
+                        "ON audit_logs(uuid)"
+                );
+
+                statement.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS idx_audit_username " +
+                        "ON audit_logs(username)"
+                );
             }
         }
     }
@@ -248,12 +298,21 @@ public final class ThunderAntiAlt extends JavaPlugin {
     }
 
     public String getMessage(String key) {
-        String prefix = messages == null ? "" : messages.getString("prefix", "");
-        String message = messages == null ? key : messages.getString("messages." + key, key);
+        String prefix = messages == null
+                ? ""
+                : messages.getString("prefix", "");
+
+        String message = messages == null
+                ? key
+                : messages.getString("messages." + key, key);
+
         return color(prefix + message);
     }
 
-    public String getMessage(String key, Map<String, String> replacements) {
+    public String getMessage(
+            String key,
+            Map<String, String> replacements
+    ) {
         String message = getMessage(key);
 
         if (replacements != null) {
@@ -272,7 +331,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
         sender.sendMessage(getMessage(key));
     }
 
-    public void sendMessage(CommandSender sender, String key, Map<String, String> replacements) {
+    public void sendMessage(
+            CommandSender sender,
+            String key,
+            Map<String, String> replacements
+    ) {
         sender.sendMessage(getMessage(key, replacements));
     }
 
@@ -280,10 +343,18 @@ public final class ThunderAntiAlt extends JavaPlugin {
         return ChatColor.translateAlternateColorCodes('&', text);
     }
 
-    public void logAudit(String uuid, String username, String ipAddress, String action, String details) {
+    public void logAudit(
+            String uuid,
+            String username,
+            String ipAddress,
+            String action,
+            String details
+    ) {
         synchronized (databaseLock) {
             if (connection == null) {
-                getLogger().warning("Audit event could not be stored: " + action);
+                getLogger().warning(
+                        "Audit event could not be stored: " + action
+                );
                 return;
             }
 
@@ -293,7 +364,8 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 VALUES (?, ?, ?, ?, ?, ?)
                 """;
 
-            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            try (PreparedStatement statement =
+                         connection.prepareStatement(sql)) {
                 statement.setString(1, uuid);
                 statement.setString(2, username);
                 statement.setString(3, ipAddress);
@@ -302,7 +374,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 statement.setString(6, Instant.now().toString());
                 statement.executeUpdate();
             } catch (SQLException exception) {
-                getLogger().log(Level.SEVERE, "Could not write audit log.", exception);
+                getLogger().log(
+                        Level.SEVERE,
+                        "Could not write audit log.",
+                        exception
+                );
             }
         }
     }
@@ -319,7 +395,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 try {
                     connection.close();
                 } catch (SQLException exception) {
-                    getLogger().log(Level.WARNING, "Could not close database.", exception);
+                    getLogger().log(
+                            Level.WARNING,
+                            "Could not close database.",
+                            exception
+                    );
                 } finally {
                     connection = null;
                 }
