@@ -3,9 +3,9 @@ package com.pritamx.thunderantialt;
 
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.plugin.PluginManager;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -21,6 +21,7 @@ import java.util.logging.Level;
 
 public final class ThunderAntiAlt extends JavaPlugin {
 
+    // Preserved from the previous version.
     private static final String LICENSE_KEY =
             "TAlt-X9vQ-7mKp-4RzN-8wHd-2LcF-6sYt";
 
@@ -31,6 +32,13 @@ public final class ThunderAntiAlt extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+
+        if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+            getLogger().severe("Could not create plugin directory.");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
         saveResourceIfMissing("messages.yml");
 
         if (!checkLicense()) {
@@ -45,17 +53,37 @@ public final class ThunderAntiAlt extends JavaPlugin {
             openDatabase();
             createTables();
         } catch (Exception exception) {
-            getLogger().log(Level.SEVERE, "Database initialization failed.", exception);
+            getLogger().log(
+                    Level.SEVERE,
+                    "Database initialization failed.",
+                    exception
+            );
             closeDatabase();
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
+
+        // Register the player login listener and admin command.
+        PluginManager manager = getServer().getPluginManager();
+        manager.registerEvents(new AccountListener(this), this);
+
+        if (getCommand("thunderantialt") == null) {
+            getLogger().severe(
+                    "Command 'thunderantialt' is missing from plugin.yml."
+            );
+            closeDatabase();
+            manager.disablePlugin(this);
+            return;
+        }
+
+        getCommand("thunderantialt").setExecutor(new AdminCommands(this));
 
         getLogger().info("ThunderAntiAlt enabled successfully.");
     }
 
     private void saveResourceIfMissing(String name) {
         File file = new File(getDataFolder(), name);
+
         if (!file.exists()) {
             saveResource(name, false);
         }
@@ -66,16 +94,15 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         if (!file.exists()) {
             try {
-                if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
-                    getLogger().severe("Could not create plugin directory.");
-                    return false;
-                }
-
                 YamlConfiguration license = new YamlConfiguration();
                 license.set("license-key", LICENSE_KEY);
                 license.save(file);
             } catch (IOException exception) {
-                getLogger().log(Level.SEVERE, "Could not create license.yml.", exception);
+                getLogger().log(
+                        Level.SEVERE,
+                        "Could not create license.yml.",
+                        exception
+                );
                 return false;
             }
         }
@@ -101,9 +128,28 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 "database.file", "accounts.db"
         );
 
+        if (configuredPath == null || configuredPath.isBlank()) {
+            configuredPath = "accounts.db";
+        }
+
         File databaseFile = new File(getDataFolder(), configuredPath);
 
+        try {
+            String basePath = getDataFolder().getCanonicalPath();
+            String databasePath = databaseFile.getCanonicalPath();
+
+            if (!databasePath.equals(basePath)
+                    && !databasePath.startsWith(basePath + File.separator)) {
+                throw new SQLException(
+                        "Database path must stay inside the plugin folder."
+                );
+            }
+        } catch (IOException exception) {
+            throw new SQLException("Could not resolve database path.", exception);
+        }
+
         File parent = databaseFile.getParentFile();
+
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw new SQLException("Could not create database directory.");
         }
@@ -210,7 +256,10 @@ public final class ThunderAntiAlt extends JavaPlugin {
         return color(prefix + message);
     }
 
-    public String getMessage(String key, Map<String, String> replacements) {
+    public String getMessage(
+            String key,
+            Map<String, String> replacements
+    ) {
         String message = getMessage(key);
 
         if (replacements != null) {
@@ -250,17 +299,20 @@ public final class ThunderAntiAlt extends JavaPlugin {
     ) {
         synchronized (databaseLock) {
             if (connection == null) {
-                getLogger().warning("Audit event could not be stored: " + action);
+                getLogger().warning(
+                        "Audit event could not be stored: " + action
+                );
                 return;
             }
 
             String sql = """
                 INSERT INTO audit_logs
-                (uuid, username, ip_address, action, details, created_at)
+                    (uuid, username, ip_address, action, details, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """;
 
-            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            try (PreparedStatement statement =
+                         connection.prepareStatement(sql)) {
                 statement.setString(1, uuid);
                 statement.setString(2, username);
                 statement.setString(3, ipAddress);
@@ -269,7 +321,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 statement.setString(6, Instant.now().toString());
                 statement.executeUpdate();
             } catch (SQLException exception) {
-                getLogger().log(Level.SEVERE, "Could not write audit log.", exception);
+                getLogger().log(
+                        Level.SEVERE,
+                        "Could not write audit log.",
+                        exception
+                );
             }
         }
     }
@@ -286,7 +342,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 try {
                     connection.close();
                 } catch (SQLException exception) {
-                    getLogger().log(Level.WARNING, "Could not close database.", exception);
+                    getLogger().log(
+                            Level.WARNING,
+                            "Could not close database.",
+                            exception
+                    );
                 } finally {
                     connection = null;
                 }
