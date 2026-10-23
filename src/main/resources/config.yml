@@ -1,1 +1,22 @@
 
+settings:
+  max-accounts-per-ip: 1
+  require-new-ip-approval: true
+  alert-admins: true
+  log-blocked-attempts: true
+  log-successful-logins: true
+
+database:
+  file: accounts.db
+
+security:
+  fail-closed-on-database-error: true
+  mask-ip-in-general-info: true
+
+proxy:
+  enabled: false
+  type: NONE
+
+floodgate:
+  enabled: false
+  
