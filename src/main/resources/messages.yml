@@ -1,4 +1,3 @@
-
 prefix: "&8[&6ThunderAntiAlt&8] "
 
 messages:
@@ -35,21 +34,21 @@ messages:
   info-account-count: "&eAccounts on this IP: &f{count}"
   info-pending-count: "&ePending alts: &f{count}"
 
-  pending-header: "&6--- Pending Alt Approval List ---"
-  pending-empty: "&7No pending alt accounts."
-  pending-entry: "&e{player} &7| Main: &f{main} &7| Attempts: &f{attempts}"
-  pending-count: "&7Pending accounts: &f{count}"
-  account-denied: "&cDenied pending account: &f{player}"
+  pending-header: "&6--- Pending Accounts ---"
+  pending-empty: "&7No pending accounts."
+  pending-entry: "&e{player} &7| UUID: &f{uuid} &7| Main: &f{main} &7| IP: &f{ip} &7| Attempts: &f{attempts}"
+  pending-count: "&ePending accounts: &f{count}"
+  account-denied: "&cDenied account: &f{player}"
   account-not-pending: "&cThat account is not pending approval."
 
   limit-updated: "&aIP account limit set to &f{limit}&a for &f{player}&a."
 
   help-header: "&6--- ThunderAntiAlt Commands ---"
+  help-reload: "&e/ta reload &7- Reload configuration and messages"
+  help-adduser: "&e/ta adduser <player> <owner> &7- Authorize an extra account"
   help-info: "&e/ta info <player> &7- View account information"
   help-pending: "&e/ta pending &7- View pending alt accounts"
   help-approve: "&e/ta approve <player> &7- Approve an account"
-  help-deny: "&e/ta deny <player> &7- Deny a pending account"
-  help-adduser: "&e/ta adduser <player> <owner> &7- Authorize an extra account"
+  help-deny: "&e/ta deny <player> &7- Deny an account"
   help-removeuser: "&e/ta removeuser <player> &7- Remove extra-account authorization"
   help-limit: "&e/ta limit <player> <number> &7- Set an IP account limit"
-  help-reload: "&e/ta reload &7- Reload configuration and messages"
