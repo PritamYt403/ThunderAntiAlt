@@ -1,15 +1,17 @@
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.pritamx</groupId>
     <artifactId>ThunderAntiAlt</artifactId>
-    <version>1.0.0</version>
+    <version>2026.0.2</version>
     <packaging>jar</packaging>
 
     <name>ThunderAntiAlt</name>
-    <description>Made by Pritam</description>
+    <description>Advanced Minecraft Anti-Alt Protection by Pritam</description>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -39,6 +41,8 @@
     </dependencies>
 
     <build>
+        <finalName>ThunderAntiAlt</finalName>
+
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -56,10 +60,12 @@
                         <goals>
                             <goal>shade</goal>
                         </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
         </plugins>
     </build>
 </project>
-
