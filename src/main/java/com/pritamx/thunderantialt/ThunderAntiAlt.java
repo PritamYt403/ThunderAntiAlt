@@ -1,11 +1,6 @@
 
 package com.pritamx.thunderantialt;
 
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -16,7 +11,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor {
+public final class ThunderAntiAlt extends JavaPlugin {
 
     private static final String LICENSE_KEY =
             "TAlt-X9vQ-7mKp-4RzN-8wHd-2LcF-6sYt";
@@ -72,7 +67,13 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
         }
 
         if (getCommand("thunderantialt") != null) {
-            getCommand("thunderantialt").setExecutor(this);
+            getCommand("thunderantialt").setExecutor(
+                    new AdminCommands(this));
+        } else {
+            getLogger().severe(
+                    "Command thunderantialt is missing from plugin.yml!");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
         }
 
         getServer().getPluginManager().registerEvents(
@@ -84,6 +85,7 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
     private boolean openDatabase() {
         try {
             File file = new File(getDataFolder(), "accounts.db");
+
             database = DriverManager.getConnection(
                     "jdbc:sqlite:" + file.getAbsolutePath());
 
@@ -127,52 +129,6 @@ public final class ThunderAntiAlt extends JavaPlugin implements CommandExecutor 
             getLogger().severe("Database error: " + e.getMessage());
             return false;
         }
-    }
-
-    @Override
-    public boolean onCommand(
-            CommandSender sender,
-            Command command,
-            String label,
-            String[] args) {
-
-        if (!sender.hasPermission("thunderantialt.admin")) {
-            sender.sendMessage(color("&cYou don't have permission."));
-            return true;
-        }
-
-        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
-            reloadConfig();
-            sender.sendMessage(color("&aConfiguration reloaded."));
-            return true;
-        }
-
-        sender.sendMessage(color(
-                "&6ThunderAntiAlt &7- Admin Commands"));
-        sender.sendMessage(color(
-                "&e/thunderantialt info <player>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt lookup <player>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt logs <player>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt adduser <player>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt removeuser <player>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt reset <player>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt unban <player>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt limit <player> <number>"));
-        sender.sendMessage(color(
-                "&e/thunderantialt reload"));
-
-        return true;
-    }
-
-    private String color(String message) {
-        return ChatColor.translateAlternateColorCodes('&', message);
     }
 
     @Override
