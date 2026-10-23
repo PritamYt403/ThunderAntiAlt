@@ -54,7 +54,7 @@ messages:
   help-limit: "&e/ta limit <player> <number> &7- Set an IP account limit"
   help-clearlogs: "&e/ta clearlogs <player> &7- Clear audit history"
   help-reload: "&e/ta reload &7- Reload configuration and messages"
-    no-permission: "&cYou don't have permission to use this command."
+  no-permission: "&cYou don't have permission to use this command."
   database-error: "&cDatabase error occurred. Check console."
   player-not-found: "&cPlayer account not found."
   unknown-command: "&cUnknown command. Use /ta help."
