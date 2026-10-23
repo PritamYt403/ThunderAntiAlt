@@ -57,7 +57,7 @@ jobs:
         run: |
           mvn --batch-mode --no-transfer-progress \
             -Dmaven.compiler.release=25 \
-            -Dpaper.api.version=26.1.2.build-SNAPSHOT \
+            -Dpaper.api.version=26.1.2.build.61-stable \
             clean package
 
       - name: Prepare JAR
