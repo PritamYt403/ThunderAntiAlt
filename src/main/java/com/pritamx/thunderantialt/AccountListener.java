@@ -50,9 +50,9 @@ public final class AccountListener implements Listener {
             try {
                 db.setAutoCommit(false);
 
+                boolean exists = false;
                 String savedIp = null;
                 int approved = 0;
-                boolean exists = false;
 
                 try (PreparedStatement ps = db.prepareStatement(
                         "SELECT ip_address, approved FROM accounts WHERE uuid = ?")) {
@@ -68,15 +68,6 @@ public final class AccountListener implements Listener {
                 }
 
                 if (exists) {
-                    if (approved != 1) {
-                        log(db, uuid, username, ip, "APPROVAL_PENDING",
-                                "Account awaits administrator approval");
-                        db.commit();
-                        alertAdmins(username, "Account awaiting approval");
-                        deny(event, "Your account is awaiting administrator approval.");
-                        return;
-                    }
-
                     if (savedIp == null || !savedIp.equals(ip)) {
                         log(db, uuid, username, ip, "NEW_IP_BLOCKED",
                                 "Account attempted login from a different IP");
@@ -86,41 +77,32 @@ public final class AccountListener implements Listener {
                         return;
                     }
 
-                    try (PreparedStatement ps = db.prepareStatement(
-                            "UPDATE accounts SET username = ?, last_seen = ? WHERE uuid = ?")) {
-                        ps.setString(1, username);
-                        ps.setString(2, Instant.now().toString());
-                        ps.setString(3, uuid);
-                        ps.executeUpdate();
+                    boolean approvedExtra = isAuthorizedForOwnerIp(db, uuid, ip);
+
+                    if (approved != 1 && !approvedExtra) {
+                        log(db, uuid, username, ip, "APPROVAL_PENDING",
+                                "Account awaits administrator approval");
+                        db.commit();
+                        alertAdmins(username, "Account awaiting approval");
+                        deny(event, "Your account is awaiting administrator approval.");
+                        return;
                     }
+
+                    updateLastSeen(db, uuid, username);
 
                     if (plugin.getConfig().getBoolean(
                             "settings.log-successful-logins", true)) {
                         log(db, uuid, username, ip, "LOGIN_ALLOWED",
-                                "Existing account login accepted");
+                                approvedExtra && approved != 1
+                                        ? "Authorized extra account login accepted"
+                                        : "Existing account login accepted");
                     }
 
                     db.commit();
                     return;
                 }
 
-                // New account: check whether an existing account from this IP
-                // explicitly authorized this UUID.
-                boolean authorized = false;
-
-                try (PreparedStatement ps = db.prepareStatement("""
-                        SELECT owner_uuid
-                        FROM authorized_accounts
-                        WHERE account_uuid = ?
-                        """)) {
-                    ps.setString(1, uuid);
-
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) {
-                            authorized = true;
-                        }
-                    }
-                }
+                boolean authorizedExtra = isAuthorizedForOwnerIp(db, uuid, ip);
 
                 int limit = Math.max(1, plugin.getConfig().getInt(
                         "settings.max-accounts-per-ip", 1));
@@ -135,7 +117,7 @@ public final class AccountListener implements Listener {
                     }
                 }
 
-                if (count >= limit && !authorized) {
+                if (count >= limit && !authorizedExtra) {
                     log(db, uuid, username, ip, "ACCOUNT_LIMIT_BLOCKED",
                             "Configured IP account limit reached");
                     db.commit();
@@ -164,9 +146,7 @@ public final class AccountListener implements Listener {
                 }
 
                 log(db, uuid, username, ip, "NEW_ACCOUNT",
-                        authorized
-                                ? "Authorized extra account registered"
-                                : "New account registered");
+                        "New account registered");
 
                 db.commit();
 
@@ -202,6 +182,42 @@ public final class AccountListener implements Listener {
         }
     }
 
+    private boolean isAuthorizedForOwnerIp(
+            Connection db, String accountUuid, String loginIp)
+            throws SQLException {
+
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT 1
+                FROM authorized_accounts aa
+                JOIN accounts owner ON owner.uuid = aa.owner_uuid
+                WHERE aa.account_uuid = ?
+                  AND owner.ip_address = ?
+                LIMIT 1
+                """)) {
+
+            ps.setString(1, accountUuid);
+            ps.setString(2, loginIp);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private void updateLastSeen(
+            Connection db, String uuid, String username)
+            throws SQLException {
+
+        try (PreparedStatement ps = db.prepareStatement(
+                "UPDATE accounts SET username = ?, last_seen = ? WHERE uuid = ?")) {
+
+            ps.setString(1, username);
+            ps.setString(2, Instant.now().toString());
+            ps.setString(3, uuid);
+            ps.executeUpdate();
+        }
+    }
+
     private void deny(PlayerLoginEvent event, String message) {
         event.disallow(PlayerLoginEvent.Result.KICK_OTHER, message);
     }
@@ -227,6 +243,7 @@ public final class AccountListener implements Listener {
                 (player_uuid, username, ip_address, event, details)
                 VALUES (?, ?, ?, ?, ?)
                 """)) {
+
             ps.setString(1, uuid);
             ps.setString(2, username);
             ps.setString(3, ip);
