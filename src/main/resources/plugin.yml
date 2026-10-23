@@ -9,7 +9,7 @@ description: Advanced Anti-Alt Account Protection System
 commands:
   thunderantialt:
     description: ThunderAntiAlt administration commands
-    usage: "/ta help"
+    usage: "/ta <reload|adduser|info|pending|approve|deny|removeuser|limit>"
     aliases:
       - ta
 
