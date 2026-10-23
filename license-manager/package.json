@@ -1,1 +1,20 @@
 
+{
+  "name": "thunderantialt-license-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ThunderAntiAlt License Manager API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3"
+  }
+}
