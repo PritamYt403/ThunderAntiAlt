@@ -1,1 +1,22 @@
 
+name: ThunderAntiAlt
+version: '2026.0.1'
+main: com.pritamx.thunderantialt.ThunderAntiAlt
+api-version: '1.21'
+author: Pritam
+description: Anti-alt account protection system
+
+commands:
+  thunderantialt:
+    description: ThunderAntiAlt admin commands
+    usage: /thunderantialt
+    aliases: [ta]
+
+permissions:
+  thunderantialt.admin:
+    description: Manage ThunderAntiAlt
+    default: op
+  thunderantialt.bypass:
+    description: Bypass account restrictions
+    default: false
+    
