@@ -47,8 +47,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
             try {
                 license.save(licenseFile);
             } catch (IOException exception) {
-                getLogger().log(Level.SEVERE,
-                        "Could not create license.yml.", exception);
+                getLogger().log(
+                        Level.SEVERE,
+                        "Could not create license.yml.",
+                        exception
+                );
                 disableSelf();
                 return;
             }
@@ -61,7 +64,9 @@ public final class ThunderAntiAlt extends JavaPlugin {
         }
 
         if (!checkLicense(licenseFile)) {
-            getLogger().severe("License validation failed. Check license.yml.");
+            getLogger().severe(
+                    "License validation failed. Check license.yml."
+            );
             disableSelf();
             return;
         }
@@ -74,8 +79,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
             openDatabase();
             createTables();
         } catch (Exception exception) {
-            getLogger().log(Level.SEVERE,
-                    "Database initialization failed.", exception);
+            getLogger().log(
+                    Level.SEVERE,
+                    "Database initialization failed.",
+                    exception
+            );
             closeDatabase();
             disableSelf();
             return;
@@ -94,12 +102,16 @@ public final class ThunderAntiAlt extends JavaPlugin {
         }
 
         getCommand("thunderantialt").setExecutor(new AdminCommands(this));
+
         getLogger().info("ThunderAntiAlt enabled successfully.");
     }
 
     private boolean checkLicense(File file) {
-        FileConfiguration license = YamlConfiguration.loadConfiguration(file);
-        String suppliedKey = license.getString("license-key", "").trim();
+        FileConfiguration license =
+                YamlConfiguration.loadConfiguration(file);
+
+        String suppliedKey =
+                license.getString("license-key", "").trim();
 
         if (suppliedKey.isEmpty()) {
             return false;
@@ -107,11 +119,13 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
             byte[] hash = digest.digest(
                     suppliedKey.getBytes(StandardCharsets.UTF_8)
             );
 
             StringBuilder hex = new StringBuilder(hash.length * 2);
+
             for (byte value : hash) {
                 hex.append(String.format("%02x", value & 0xff));
             }
@@ -120,9 +134,13 @@ public final class ThunderAntiAlt extends JavaPlugin {
                     hex.toString().getBytes(StandardCharsets.US_ASCII),
                     LICENSE_SHA256.getBytes(StandardCharsets.US_ASCII)
             );
+
         } catch (Exception exception) {
-            getLogger().log(Level.SEVERE,
-                    "License validation error.", exception);
+            getLogger().log(
+                    Level.SEVERE,
+                    "License validation error.",
+                    exception
+            );
             return false;
         }
     }
@@ -133,6 +151,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
     private void saveResourceIfMissing(String name) {
         File file = new File(getDataFolder(), name);
+
         if (!file.exists()) {
             saveResource(name, false);
         }
@@ -151,7 +170,9 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
     private void openDatabase() throws SQLException {
         String configuredPath = getConfig().getString(
-                "database.file", "accounts.db");
+                "database.file",
+                "accounts.db"
+        );
 
         if (configuredPath == null || configuredPath.isBlank()) {
             configuredPath = "accounts.db";
@@ -164,21 +185,30 @@ public final class ThunderAntiAlt extends JavaPlugin {
             String databasePath = databaseFile.getCanonicalPath();
 
             if (!databasePath.equals(basePath)
-                    && !databasePath.startsWith(basePath + File.separator)) {
+                    && !databasePath.startsWith(
+                            basePath + File.separator
+                    )) {
                 throw new SQLException(
-                        "Database path must stay inside the plugin folder.");
+                        "Database path must stay inside the plugin folder."
+                );
             }
+
         } catch (IOException exception) {
-            throw new SQLException("Could not resolve database path.", exception);
+            throw new SQLException(
+                    "Could not resolve database path.",
+                    exception
+            );
         }
 
         File parent = databaseFile.getParentFile();
+
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw new SQLException("Could not create database directory.");
         }
 
         connection = DriverManager.getConnection(
-                "jdbc:sqlite:" + databaseFile.getAbsolutePath());
+                "jdbc:sqlite:" + databaseFile.getAbsolutePath()
+        );
 
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys = ON");
@@ -189,6 +219,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
     private void createTables() throws SQLException {
         synchronized (databaseLock) {
             try (Statement statement = connection.createStatement()) {
+
                 statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS accounts (
                         uuid TEXT PRIMARY KEY,
@@ -317,10 +348,14 @@ public final class ThunderAntiAlt extends JavaPlugin {
         String message = getMessage(key);
 
         if (replacements != null) {
-            for (Map.Entry<String, String> entry : replacements.entrySet()) {
+            for (Map.Entry<String, String> entry
+                    : replacements.entrySet()) {
+
                 message = message.replace(
                         "{" + entry.getKey() + "}",
-                        entry.getValue() == null ? "" : entry.getValue()
+                        entry.getValue() == null
+                                ? ""
+                                : entry.getValue()
                 );
             }
         }
@@ -354,7 +389,8 @@ public final class ThunderAntiAlt extends JavaPlugin {
         synchronized (databaseLock) {
             if (connection == null) {
                 getLogger().warning(
-                        "Audit event could not be stored: " + action);
+                        "Audit event could not be stored: " + action
+                );
                 return;
             }
 
@@ -366,16 +402,22 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
             try (PreparedStatement statement =
                          connection.prepareStatement(sql)) {
+
                 statement.setString(1, uuid);
                 statement.setString(2, username);
                 statement.setString(3, ipAddress);
                 statement.setString(4, action);
                 statement.setString(5, details);
                 statement.setString(6, Instant.now().toString());
+
                 statement.executeUpdate();
+
             } catch (SQLException exception) {
-                getLogger().log(Level.SEVERE,
-                        "Could not write audit log.", exception);
+                getLogger().log(
+                        Level.SEVERE,
+                        "Could not write audit log.",
+                        exception
+                );
             }
         }
     }
@@ -392,8 +434,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 try {
                     connection.close();
                 } catch (SQLException exception) {
-                    getLogger().log(Level.WARNING,
-                            "Could not close database.", exception);
+                    getLogger().log(
+                            Level.WARNING,
+                            "Could not close database.",
+                            exception
+                    );
                 } finally {
                     connection = null;
                 }
