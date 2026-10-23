@@ -32,167 +32,182 @@ public final class AccountListener implements Listener {
 
         InetAddress address = event.getAddress();
         if (address == null) {
-            block(event, "Unable to verify your IP address.");
+            deny(event, "Unable to verify your IP address.");
             return;
         }
 
         String ip = address.getHostAddress();
         String uuid = player.getUniqueId().toString();
         String username = player.getName();
+        Connection db = plugin.getDatabase();
 
-        Connection database = plugin.getDatabase();
-
-        if (database == null) {
-            block(event, "Account verification unavailable. Contact an administrator.");
+        if (db == null) {
+            deny(event, "Account verification unavailable. Contact an administrator.");
             return;
         }
 
-        synchronized (database) {
+        synchronized (db) {
             try {
-                boolean exists = false;
+                db.setAutoCommit(false);
+
                 String savedIp = null;
                 int approved = 0;
+                boolean exists = false;
 
-                try (PreparedStatement query = database.prepareStatement(
+                try (PreparedStatement ps = db.prepareStatement(
                         "SELECT ip_address, approved FROM accounts WHERE uuid = ?")) {
+                    ps.setString(1, uuid);
 
-                    query.setString(1, uuid);
-
-                    try (ResultSet result = query.executeQuery()) {
-                        if (result.next()) {
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
                             exists = true;
-                            savedIp = result.getString("ip_address");
-                            approved = result.getInt("approved");
+                            savedIp = rs.getString("ip_address");
+                            approved = rs.getInt("approved");
                         }
                     }
                 }
 
-                // Existing accounts must use their bound IP.
-                if (exists && (savedIp == null || !savedIp.equals(ip))) {
-                    logEvent(database, uuid, username, ip,
-                            "NEW_IP_BLOCKED",
-                            "Account attempted login from a different IP");
-
-                    alertAdmins(username, "Blocked login attempt");
-
-                    block(event,
-                            "Your IP has changed. Ask an administrator to reset your binding.");
-                    return;
-                }
-
-                // Existing accounts cannot bypass pending approval.
-                if (exists && approved != 1) {
-                    logEvent(database, uuid, username, ip,
-                            "APPROVAL_PENDING",
-                            "Login blocked while awaiting administrator approval");
-
-                    alertAdmins(username, "Login awaiting approval");
-
-                    block(event,
-                            "Your account is awaiting administrator approval.");
-                    return;
-                }
-
-                if (!exists) {
-                    int limit = Math.max(1,
-                            plugin.getConfig().getInt(
-                                    "settings.max-accounts-per-ip", 1));
-
-                    int count;
-
-                    try (PreparedStatement query = database.prepareStatement(
-                            "SELECT COUNT(*) FROM accounts WHERE ip_address = ?")) {
-                        query.setString(1, ip);
-
-                        try (ResultSet result = query.executeQuery()) {
-                            count = result.next() ? result.getInt(1) : 0;
-                        }
+                if (exists) {
+                    if (approved != 1) {
+                        log(db, uuid, username, ip, "APPROVAL_PENDING",
+                                "Account awaits administrator approval");
+                        db.commit();
+                        alertAdmins(username, "Account awaiting approval");
+                        deny(event, "Your account is awaiting administrator approval.");
+                        return;
                     }
 
-                    if (count >= limit) {
-                        logEvent(database, uuid, username, ip,
-                                "ACCOUNT_LIMIT_BLOCKED",
-                                "Configured IP account limit reached");
-
+                    if (savedIp == null || !savedIp.equals(ip)) {
+                        log(db, uuid, username, ip, "NEW_IP_BLOCKED",
+                                "Account attempted login from a different IP");
+                        db.commit();
                         alertAdmins(username, "Blocked login attempt");
-
-                        block(event,
-                                "This IP has reached the account limit.");
+                        deny(event, "Your IP has changed. Ask an administrator to reset your binding.");
                         return;
                     }
 
-                    boolean approvalRequired = plugin.getConfig()
-                            .getBoolean("settings.require-new-ip-approval", true);
-
-                    int isApproved = approvalRequired ? 0 : 1;
-
-                    try (PreparedStatement insert = database.prepareStatement("""
-                            INSERT INTO accounts
-                            (uuid, username, ip_address, account_limit,
-                             approved, last_seen)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                            """)) {
-
-                        insert.setString(1, uuid);
-                        insert.setString(2, username);
-                        insert.setString(3, ip);
-                        insert.setInt(4, limit);
-                        insert.setInt(5, isApproved);
-                        insert.setString(6, Instant.now().toString());
-                        insert.executeUpdate();
-                    }
-
-                    logEvent(database, uuid, username, ip,
-                            "NEW_ACCOUNT",
-                            approvalRequired
-                                    ? "New account awaiting approval"
-                                    : "New account registered");
-
-                    alertAdmins(username, "New account detected");
-
-                    if (approvalRequired) {
-                        block(event,
-                                "Your account requires administrator approval.");
-                        return;
-                    }
-
-                } else {
-                    try (PreparedStatement update = database.prepareStatement(
+                    try (PreparedStatement ps = db.prepareStatement(
                             "UPDATE accounts SET username = ?, last_seen = ? WHERE uuid = ?")) {
-
-                        update.setString(1, username);
-                        update.setString(2, Instant.now().toString());
-                        update.setString(3, uuid);
-                        update.executeUpdate();
+                        ps.setString(1, username);
+                        ps.setString(2, Instant.now().toString());
+                        ps.setString(3, uuid);
+                        ps.executeUpdate();
                     }
 
                     if (plugin.getConfig().getBoolean(
                             "settings.log-successful-logins", true)) {
-                        logEvent(database, uuid, username, ip,
-                                "LOGIN_ALLOWED", "Existing account login accepted");
+                        log(db, uuid, username, ip, "LOGIN_ALLOWED",
+                                "Existing account login accepted");
+                    }
+
+                    db.commit();
+                    return;
+                }
+
+                // New account: check whether an existing account from this IP
+                // explicitly authorized this UUID.
+                boolean authorized = false;
+
+                try (PreparedStatement ps = db.prepareStatement("""
+                        SELECT owner_uuid
+                        FROM authorized_accounts
+                        WHERE account_uuid = ?
+                        """)) {
+                    ps.setString(1, uuid);
+
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            authorized = true;
+                        }
                     }
                 }
 
+                int limit = Math.max(1, plugin.getConfig().getInt(
+                        "settings.max-accounts-per-ip", 1));
+
+                int count;
+                try (PreparedStatement ps = db.prepareStatement(
+                        "SELECT COUNT(*) FROM accounts WHERE ip_address = ?")) {
+                    ps.setString(1, ip);
+
+                    try (ResultSet rs = ps.executeQuery()) {
+                        count = rs.next() ? rs.getInt(1) : 0;
+                    }
+                }
+
+                if (count >= limit && !authorized) {
+                    log(db, uuid, username, ip, "ACCOUNT_LIMIT_BLOCKED",
+                            "Configured IP account limit reached");
+                    db.commit();
+                    alertAdmins(username, "Blocked login attempt");
+                    deny(event, "This IP has reached the account limit.");
+                    return;
+                }
+
+                boolean approvalRequired = plugin.getConfig().getBoolean(
+                        "settings.require-new-ip-approval", true);
+
+                int isApproved = approvalRequired ? 0 : 1;
+
+                try (PreparedStatement ps = db.prepareStatement("""
+                        INSERT INTO accounts
+                        (uuid, username, ip_address, account_limit, approved, last_seen)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """)) {
+                    ps.setString(1, uuid);
+                    ps.setString(2, username);
+                    ps.setString(3, ip);
+                    ps.setInt(4, limit);
+                    ps.setInt(5, isApproved);
+                    ps.setString(6, Instant.now().toString());
+                    ps.executeUpdate();
+                }
+
+                log(db, uuid, username, ip, "NEW_ACCOUNT",
+                        authorized
+                                ? "Authorized extra account registered"
+                                : "New account registered");
+
+                db.commit();
+
+                if (approvalRequired) {
+                    alertAdmins(username, "New account awaiting approval");
+                    deny(event, "Your account requires administrator approval.");
+                } else {
+                    alertAdmins(username, "New account detected");
+                }
+
             } catch (SQLException exception) {
+                try {
+                    db.rollback();
+                } catch (SQLException rollbackError) {
+                    plugin.getLogger().severe(
+                            "Database rollback failed: "
+                                    + rollbackError.getMessage());
+                }
+
                 plugin.getLogger().severe(
                         "Account verification failed: "
                                 + exception.getMessage());
 
-                block(event,
-                        "Account verification failed. Contact an administrator.");
+                deny(event, "Account verification failed. Contact an administrator.");
+            } finally {
+                try {
+                    db.setAutoCommit(true);
+                } catch (SQLException exception) {
+                    plugin.getLogger().severe(
+                            "Could not restore database transaction mode.");
+                }
             }
         }
     }
 
-    private void block(PlayerLoginEvent event, String message) {
-        event.disallow(
-                PlayerLoginEvent.Result.KICK_OTHER,
-                message
-        );
+    private void deny(PlayerLoginEvent event, String message) {
+        event.disallow(PlayerLoginEvent.Result.KICK_OTHER, message);
     }
 
-    private void logEvent(
-            Connection database,
+    private void log(
+            Connection db,
             String uuid,
             String username,
             String ip,
@@ -207,18 +222,17 @@ public final class AccountListener implements Listener {
             return;
         }
 
-        try (PreparedStatement query = database.prepareStatement("""
+        try (PreparedStatement ps = db.prepareStatement("""
                 INSERT INTO audit_logs
                 (player_uuid, username, ip_address, event, details)
                 VALUES (?, ?, ?, ?, ?)
                 """)) {
-
-            query.setString(1, uuid);
-            query.setString(2, username);
-            query.setString(3, ip);
-            query.setString(4, action);
-            query.setString(5, details);
-            query.executeUpdate();
+            ps.setString(1, uuid);
+            ps.setString(2, username);
+            ps.setString(3, ip);
+            ps.setString(4, action);
+            ps.setString(5, details);
+            ps.executeUpdate();
         }
     }
 
