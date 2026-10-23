@@ -39,7 +39,8 @@ public final class AdminCommands implements CommandExecutor {
 
         String sub = args[0].toLowerCase(Locale.ROOT);
 
-        if (!sub.equals("reload")
+        if (!sub.equals("help")
+                && !sub.equals("reload")
                 && !sub.equals("adduser")
                 && !sub.equals("info")
                 && !sub.equals("pending")
@@ -48,6 +49,11 @@ public final class AdminCommands implements CommandExecutor {
                 && !sub.equals("removeuser")
                 && !sub.equals("limit")) {
             plugin.sendMessage(sender, "unknown-command");
+            return true;
+        }
+
+        if (sub.equals("help")) {
+            sendHelp(sender);
             return true;
         }
 
@@ -87,15 +93,15 @@ public final class AdminCommands implements CommandExecutor {
     }
 
     private void sendHelp(CommandSender sender) {
-        sender.sendMessage(plugin.color("&6--- ThunderAntiAlt Commands ---"));
-        sender.sendMessage(plugin.color("&e/ta reload"));
-        sender.sendMessage(plugin.color("&e/ta adduser <player> <owner>"));
-        sender.sendMessage(plugin.color("&e/ta info <player>"));
-        sender.sendMessage(plugin.color("&e/ta pending"));
-        sender.sendMessage(plugin.color("&e/ta approve <player>"));
-        sender.sendMessage(plugin.color("&e/ta deny <player>"));
-        sender.sendMessage(plugin.color("&e/ta removeuser <player>"));
-        sender.sendMessage(plugin.color("&e/ta limit <player> <number>"));
+        plugin.sendMessage(sender, "help-header");
+        plugin.sendMessage(sender, "help-reload");
+        plugin.sendMessage(sender, "help-adduser");
+        plugin.sendMessage(sender, "help-info");
+        plugin.sendMessage(sender, "help-pending");
+        plugin.sendMessage(sender, "help-approve");
+        plugin.sendMessage(sender, "help-deny");
+        plugin.sendMessage(sender, "help-removeuser");
+        plugin.sendMessage(sender, "help-limit");
     }
 
     private void pending(CommandSender sender, Connection db)
