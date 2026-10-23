@@ -23,12 +23,7 @@ import java.util.logging.Level;
 
 public final class ThunderAntiAlt extends JavaPlugin {
 
-    /*
-     * SHA-256 digest of the configured license key.
-     * This hides the plaintext key from this source file,
-     * but does not provide secure licensing against a determined
-     * person who can inspect or modify the plugin.
-     */
+    // SHA-256 of the existing license key.
     private static final String LICENSE_SHA256 =
             "dbcfbbcfdd08fe002be682f3927aa863b55870b877b18fcd43bb6a51af946ed0";
 
@@ -46,7 +41,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         File licenseFile = new File(getDataFolder(), "license.yml");
 
-        // First startup: create ONLY license.yml.
+        // First startup: create only license.yml.
         if (!licenseFile.exists()) {
             YamlConfiguration license = new YamlConfiguration();
             license.set("license-key", "");
@@ -64,22 +59,22 @@ public final class ThunderAntiAlt extends JavaPlugin {
             }
 
             getLogger().warning(
-                    "Created license.yml. Enter your license key and restart the server."
+                    "Created license.yml. Add your license key and restart the server."
             );
             disableSelf();
             return;
         }
 
-        // Validate the supplied key before creating other plugin files.
+        // Validate the key before creating other plugin files.
         if (!checkLicense(licenseFile)) {
             getLogger().severe(
-                    "License validation failed. Check plugins/ThunderAntiAlt/license.yml."
+                    "License validation failed. Check license.yml."
             );
             disableSelf();
             return;
         }
 
-        // Valid license: create and load the remaining plugin files.
+        // License valid: initialize the remaining files.
         saveDefaultConfig();
         saveResourceIfMissing("messages.yml");
         loadMessages();
@@ -111,6 +106,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
         }
 
         getCommand("thunderantialt").setExecutor(new AdminCommands(this));
+
         getLogger().info("ThunderAntiAlt enabled successfully.");
     }
 
@@ -134,12 +130,12 @@ public final class ThunderAntiAlt extends JavaPlugin {
                 hex.append(String.format("%02x", value & 0xff));
             }
 
-            byte[] suppliedHash = hex.toString()
+            byte[] actual = hex.toString()
                     .getBytes(StandardCharsets.US_ASCII);
-            byte[] expectedHash = LICENSE_SHA256
+            byte[] expected = LICENSE_SHA256
                     .getBytes(StandardCharsets.US_ASCII);
 
-            return MessageDigest.isEqual(suppliedHash, expectedHash);
+            return MessageDigest.isEqual(actual, expected);
         } catch (Exception exception) {
             getLogger().log(
                     Level.SEVERE,
