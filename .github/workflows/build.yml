@@ -1,10 +1,13 @@
+
 name: Build ThunderAntiAlt
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -12,6 +15,7 @@ permissions:
 
 jobs:
   build:
+    name: Build Plugin
     runs-on: ubuntu-latest
 
     steps:
@@ -25,12 +29,18 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Build plugin
+      - name: Verify Java and Maven
+        run: |
+          java -version
+          mvn -version
+
+      - name: Build ThunderAntiAlt
         run: mvn --batch-mode --no-transfer-progress clean package
 
       - name: Upload plugin JAR
         uses: actions/upload-artifact@v4
         with:
           name: ThunderAntiAlt-JAR
-          path: target/ThunderAntiAlt-*.jar
+          path: target/ThunderAntiAlt.jar
           if-no-files-found: error
+          retention-days: 14
