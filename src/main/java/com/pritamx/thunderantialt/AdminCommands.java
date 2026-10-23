@@ -12,9 +12,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 public final class AdminCommands implements CommandExecutor {
@@ -30,8 +30,8 @@ public final class AdminCommands implements CommandExecutor {
             CommandSender sender,
             Command command,
             String label,
-            String[] args
-    ) {
+            String[] args) {
+
         if (!sender.isOp()
                 && !sender.hasPermission("thunderantialt.admin")) {
             plugin.sendMessage(sender, "no-permission");
@@ -87,11 +87,11 @@ public final class AdminCommands implements CommandExecutor {
         sender.sendMessage(plugin.color("&6--- ThunderAntiAlt Commands ---"));
         sender.sendMessage(plugin.color("&e/ta pending &7- Pending alt list"));
         sender.sendMessage(plugin.color("&e/ta approve <player> &7- Approve account"));
-        sender.sendMessage(plugin.color("&e/ta deny <player> &7- Deny pending account"));
-        sender.sendMessage(plugin.color("&e/ta info <player> &7- Account information"));
+        sender.sendMessage(plugin.color("&e/ta deny <player> &7- Deny account"));
+        sender.sendMessage(plugin.color("&e/ta info <player> &7- Account history and status"));
         sender.sendMessage(plugin.color("&e/ta lookup <player> &7- Account/IP lookup"));
         sender.sendMessage(plugin.color("&e/ta logs <player> &7- Audit history"));
-        sender.sendMessage(plugin.color("&e/ta adduser <player> <owner> &7- Authorize extra account"));
+        sender.sendMessage(plugin.color("&e/ta adduser <player> <owner> &7- Authorize account"));
         sender.sendMessage(plugin.color("&e/ta removeuser <player> &7- Remove authorization"));
         sender.sendMessage(plugin.color("&e/ta reset <player> &7- Reset IP binding"));
         sender.sendMessage(plugin.color("&e/ta ban <player> [reason] &7- Ban account"));
@@ -103,35 +103,36 @@ public final class AdminCommands implements CommandExecutor {
 
     private void pending(CommandSender sender, Connection db)
             throws SQLException {
-        String sql = """
-                SELECT p.username, p.ip_address, p.main_uuid,
-                       p.first_seen, p.attempts
-                FROM pending_alt_accounts p
-                WHERE p.status = 'PENDING'
-                ORDER BY p.first_seen ASC
-                """;
-
         sender.sendMessage(plugin.color("&6--- Pending Alt Approval List ---"));
+
         int count = 0;
 
-        try (PreparedStatement ps = db.prepareStatement(sql);
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT username, uuid, ip_address, main_uuid,
+                       first_seen, attempts
+                FROM pending_alt_accounts
+                WHERE status = 'PENDING'
+                ORDER BY first_seen ASC
+                """);
              ResultSet rs = ps.executeQuery()) {
+
             while (rs.next()) {
                 count++;
                 sender.sendMessage(plugin.color(
                         "&e" + rs.getString("username")
-                        + " &7| IP: &f" + rs.getString("ip_address")
+                        + " &7| UUID: &f" + rs.getString("uuid")
                         + " &7| Main UUID: &f" + rs.getString("main_uuid")
-                        + " &7| Attempts: &f" + rs.getInt("attempts")
-                ));
+                        + " &7| IP: &f" + rs.getString("ip_address")
+                        + " &7| Attempts: &f" + rs.getInt("attempts")));
+
+                sender.sendMessage(plugin.color(
+                        "&7  First seen: &f" + rs.getString("first_seen")));
             }
         }
 
-        if (count == 0) {
-            sender.sendMessage(plugin.color("&7No pending alt accounts."));
-        } else {
-            sender.sendMessage(plugin.color("&7Pending accounts: &f" + count));
-        }
+        sender.sendMessage(plugin.color(count == 0
+                ? "&aNo pending alt accounts."
+                : "&ePending accounts: &f" + count));
     }
 
     private void approve(
@@ -148,51 +149,104 @@ public final class AdminCommands implements CommandExecutor {
             return;
         }
 
-        db.setAutoCommit(false);
+        boolean previousAutoCommit = db.getAutoCommit();
+
         try {
+            db.setAutoCommit(false);
+
+            String mainUuid = null;
+
             try (PreparedStatement ps = db.prepareStatement("""
-                    UPDATE accounts
-                    SET approved = 1, username = ?
+                    SELECT main_uuid
+                    FROM pending_alt_accounts
                     WHERE uuid = ?
                     """)) {
-                ps.setString(1, account.username);
-                ps.setString(2, account.uuid);
-                ps.executeUpdate();
+                ps.setString(1, account.uuid);
+
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        mainUuid = rs.getString("main_uuid");
+                    }
+                }
             }
+
+            if (mainUuid == null || mainUuid.isBlank()
+                    || "UNKNOWN".equalsIgnoreCase(mainUuid)) {
+                throw new SQLException(
+                        "No valid main account is linked to this pending account.");
+            }
+
+            int changed;
 
             try (PreparedStatement ps = db.prepareStatement("""
                     UPDATE pending_alt_accounts
                     SET status = 'APPROVED'
-                    WHERE uuid = ? AND status = 'PENDING'
+                    WHERE uuid = ? AND status IN ('PENDING', 'DENIED')
                     """)) {
                 ps.setString(1, account.uuid);
+                changed = ps.executeUpdate();
+            }
+
+            if (changed == 0 && !isApproved(db, account.uuid)) {
+                db.rollback();
+                sender.sendMessage(plugin.color(
+                        "&cThis account is not pending or has no approval record."));
+                return;
+            }
+
+            try (PreparedStatement ps = db.prepareStatement("""
+                    UPDATE accounts
+                    SET approved = 1, username = ?, last_seen = ?
+                    WHERE uuid = ?
+                    """)) {
+                ps.setString(1, account.username);
+                ps.setString(2, Instant.now().toString());
+                ps.setString(3, account.uuid);
                 ps.executeUpdate();
             }
 
             try (PreparedStatement ps = db.prepareStatement("""
-                    INSERT OR IGNORE INTO authorized_accounts
+                    INSERT INTO authorized_accounts
                         (owner_uuid, authorized_uuid, created_at)
-                    SELECT main_uuid, uuid, ?
-                    FROM pending_alt_accounts
-                    WHERE uuid = ?
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(authorized_uuid) DO UPDATE SET
+                        owner_uuid = excluded.owner_uuid,
+                        created_at = excluded.created_at
                     """)) {
-                ps.setString(1, Instant.now().toString());
+                ps.setString(1, mainUuid);
                 ps.setString(2, account.uuid);
+                ps.setString(3, Instant.now().toString());
                 ps.executeUpdate();
             }
 
             db.commit();
+
+            plugin.sendMessage(sender, "admin-account-approved",
+                    Map.of("player", account.username));
+
+            plugin.logAudit(account.uuid, account.username, account.ip,
+                    "ACCOUNT_APPROVED", "Approved by " + sender.getName());
+
         } catch (SQLException exception) {
             db.rollback();
             throw exception;
         } finally {
-            db.setAutoCommit(true);
+            db.setAutoCommit(previousAutoCommit);
         }
+    }
 
-        plugin.sendMessage(sender, "admin-account-approved",
-                java.util.Map.of("player", account.username));
-        plugin.logAudit(account.uuid, account.username, account.ip,
-                "ACCOUNT_APPROVED", "Approved by " + sender.getName());
+    private boolean isApproved(Connection db, String uuid)
+            throws SQLException {
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT 1
+                FROM pending_alt_accounts
+                WHERE uuid = ? AND status = 'APPROVED'
+                """)) {
+            ps.setString(1, uuid);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
     }
 
     private void deny(
@@ -212,12 +266,13 @@ public final class AdminCommands implements CommandExecutor {
         try (PreparedStatement ps = db.prepareStatement("""
                 UPDATE pending_alt_accounts
                 SET status = 'DENIED'
-                WHERE uuid = ? AND status = 'PENDING'
+                WHERE uuid = ? AND status != 'APPROVED'
                 """)) {
             ps.setString(1, account.uuid);
+
             if (ps.executeUpdate() == 0) {
                 sender.sendMessage(plugin.color(
-                        "&cThat account is not pending approval."));
+                        "&cAccount is not pending or is already approved."));
                 return;
             }
         }
@@ -229,10 +284,19 @@ public final class AdminCommands implements CommandExecutor {
             ps.executeUpdate();
         }
 
+        try (PreparedStatement ps = db.prepareStatement("""
+                DELETE FROM authorized_accounts WHERE authorized_uuid = ?
+                """)) {
+            ps.setString(1, account.uuid);
+            ps.executeUpdate();
+        }
+
         plugin.logAudit(account.uuid, account.username, account.ip,
                 "ACCOUNT_DENIED", "Denied by " + sender.getName());
+
         sender.sendMessage(plugin.color(
-                "&cDenied pending account: &f" + account.username));
+                "&cDenied account: &f" + account.username
+                + " &7| Status: DENIED"));
     }
 
     private void info(
@@ -249,41 +313,126 @@ public final class AdminCommands implements CommandExecutor {
             return;
         }
 
-        int accountCount = 0;
-        int pendingCount = 0;
+        String mainUuid = account.uuid;
+        String status = account.approved == 1 ? "ACTIVE" : "PENDING";
 
-        if (account.ip != null) {
-            try (PreparedStatement ps = db.prepareStatement("""
-                    SELECT COUNT(*) FROM accounts WHERE ip_address = ?
-                    """)) {
-                ps.setString(1, account.ip);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) accountCount = rs.getInt(1);
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT main_uuid, status
+                FROM pending_alt_accounts
+                WHERE uuid = ?
+                """)) {
+            ps.setString(1, account.uuid);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    String linkedMain = rs.getString("main_uuid");
+                    if (linkedMain != null && !linkedMain.isBlank()
+                            && !"UNKNOWN".equalsIgnoreCase(linkedMain)) {
+                        mainUuid = linkedMain;
+                    }
+                    status = rs.getString("status");
                 }
             }
         }
 
-        try (PreparedStatement ps = db.prepareStatement("""
-                SELECT COUNT(*) FROM pending_alt_accounts
-                WHERE main_uuid = ? AND status = 'PENDING'
-                """)) {
-            ps.setString(1, account.uuid);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) pendingCount = rs.getInt(1);
-            }
+        if (isMain(db, account.uuid)) {
+            mainUuid = account.uuid;
+            status = "MAIN";
+        } else if (isAuthorized(db, account.uuid)) {
+            status = "APPROVED";
         }
 
-        sender.sendMessage(plugin.color("&6--- Account Information ---"));
+        sender.sendMessage(plugin.color("&6--- ThunderAntiAlt Account Info ---"));
         sender.sendMessage(plugin.color("&ePlayer: &f" + account.username));
         sender.sendMessage(plugin.color("&eUUID: &f" + account.uuid));
+        sender.sendMessage(plugin.color("&eStatus: &f" + status));
+        sender.sendMessage(plugin.color("&eMain UUID: &f" + mainUuid));
         sender.sendMessage(plugin.color("&eIP: &f" + account.ip));
-        sender.sendMessage(plugin.color("&eApproved: &f" + account.approved));
         sender.sendMessage(plugin.color("&eCreated: &f" + account.created));
         sender.sendMessage(plugin.color("&eLast Seen: &f" + account.lastSeen));
 
-        // Only OP/admin can run this command.
-        sender.sendMessage(plugin.color("&eAccounts on this IP: &f" + accountCount));
-        sender.sendMessage(plugin.color("&ePending alts for this account: &f" + pendingCount));
+        sender.sendMessage(plugin.color("&6--- Linked Accounts ---"));
+
+        int total = 0;
+
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT a.uuid, a.username, a.ip_address, a.approved,
+                       p.status, p.main_uuid
+                FROM accounts a
+                LEFT JOIN pending_alt_accounts p ON p.uuid = a.uuid
+                WHERE a.uuid = ?
+                   OR p.main_uuid = ?
+                   OR a.uuid IN (
+                       SELECT authorized_uuid
+                       FROM authorized_accounts
+                       WHERE owner_uuid = ?
+                   )
+                ORDER BY a.created_at ASC
+                """)) {
+            ps.setString(1, mainUuid);
+            ps.setString(2, mainUuid);
+            ps.setString(3, mainUuid);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    total++;
+
+                    String linkedStatus = rs.getString("status");
+                    if (linkedStatus == null || linkedStatus.isBlank()) {
+                        linkedStatus = rs.getInt("approved") == 1
+                                ? "ACTIVE" : "PENDING";
+                    }
+
+                    sender.sendMessage(plugin.color(
+                            "&7- &f" + rs.getString("username")
+                            + " &7| " + linkedStatus
+                            + " &7| UUID: &f" + rs.getString("uuid")));
+                }
+            }
+        }
+
+        sender.sendMessage(plugin.color("&eTotal linked accounts: &f" + total));
+
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT COUNT(*)
+                FROM pending_alt_accounts
+                WHERE main_uuid = ? AND status = 'PENDING'
+                """)) {
+            ps.setString(1, mainUuid);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    sender.sendMessage(plugin.color(
+                            "&ePending approvals: &f" + rs.getInt(1)));
+                }
+            }
+        }
+    }
+
+    private boolean isMain(Connection db, String uuid)
+            throws SQLException {
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT 1 FROM ip_main_accounts
+                WHERE main_uuid = ? LIMIT 1
+                """)) {
+            ps.setString(1, uuid);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private boolean isAuthorized(Connection db, String uuid)
+            throws SQLException {
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT 1 FROM authorized_accounts
+                WHERE authorized_uuid = ?
+                """)) {
+            ps.setString(1, uuid);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
     }
 
     private void lookup(
@@ -308,11 +457,13 @@ public final class AdminCommands implements CommandExecutor {
 
         if (account.ip != null) {
             try (PreparedStatement ps = db.prepareStatement("""
-                    SELECT uuid, username, approved FROM accounts
+                    SELECT uuid, username, approved
+                    FROM accounts
                     WHERE ip_address = ?
                     ORDER BY created_at ASC
                     """)) {
                 ps.setString(1, account.ip);
+
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         sender.sendMessage(plugin.color(
@@ -334,6 +485,7 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         sender.sendMessage(plugin.color("&6--- Audit Logs ---"));
+
         try (PreparedStatement ps = db.prepareStatement("""
                 SELECT username, action, details, created_at
                 FROM audit_logs
@@ -341,8 +493,10 @@ public final class AdminCommands implements CommandExecutor {
                 ORDER BY id DESC LIMIT 20
                 """)) {
             ps.setString(1, args[1]);
+
             try (ResultSet rs = ps.executeQuery()) {
                 boolean found = false;
+
                 while (rs.next()) {
                     found = true;
                     sender.sendMessage(plugin.color(
@@ -350,7 +504,10 @@ public final class AdminCommands implements CommandExecutor {
                             + " &7| &f" + rs.getString("action")
                             + " &7| " + rs.getString("details")));
                 }
-                if (!found) sender.sendMessage(plugin.color("&7No audit logs found."));
+
+                if (!found) {
+                    sender.sendMessage(plugin.color("&7No audit logs found."));
+                }
             }
         }
     }
@@ -372,13 +529,23 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         try (PreparedStatement ps = db.prepareStatement("""
-                INSERT OR REPLACE INTO authorized_accounts
+                INSERT INTO authorized_accounts
                     (owner_uuid, authorized_uuid, created_at)
                 VALUES (?, ?, ?)
+                ON CONFLICT(authorized_uuid) DO UPDATE SET
+                    owner_uuid = excluded.owner_uuid,
+                    created_at = excluded.created_at
                 """)) {
             ps.setString(1, owner.uuid);
             ps.setString(2, player.uuid);
             ps.setString(3, Instant.now().toString());
+            ps.executeUpdate();
+        }
+
+        try (PreparedStatement ps = db.prepareStatement("""
+                UPDATE accounts SET approved = 1 WHERE uuid = ?
+                """)) {
+            ps.setString(1, player.uuid);
             ps.executeUpdate();
         }
 
@@ -407,8 +574,15 @@ public final class AdminCommands implements CommandExecutor {
             ps.executeUpdate();
         }
 
-        sender.sendMessage(plugin.color("&aRemoved authorization for "
-                + player.username + "."));
+        try (PreparedStatement ps = db.prepareStatement("""
+                UPDATE accounts SET approved = 0 WHERE uuid = ?
+                """)) {
+            ps.setString(1, player.uuid);
+            ps.executeUpdate();
+        }
+
+        sender.sendMessage(plugin.color(
+                "&aRemoved authorization for " + player.username + "."));
     }
 
     private void reset(
@@ -425,6 +599,12 @@ public final class AdminCommands implements CommandExecutor {
             return;
         }
 
+        if (isMain(db, account.uuid)) {
+            sender.sendMessage(plugin.color(
+                    "&cCannot reset a Main Account with this command."));
+            return;
+        }
+
         try (PreparedStatement ps = db.prepareStatement("""
                 UPDATE accounts SET ip_address = NULL, approved = 0
                 WHERE uuid = ?
@@ -433,8 +613,24 @@ public final class AdminCommands implements CommandExecutor {
             ps.executeUpdate();
         }
 
+        try (PreparedStatement ps = db.prepareStatement("""
+                DELETE FROM authorized_accounts WHERE authorized_uuid = ?
+                """)) {
+            ps.setString(1, account.uuid);
+            ps.executeUpdate();
+        }
+
+        try (PreparedStatement ps = db.prepareStatement("""
+                UPDATE pending_alt_accounts
+                SET status = 'PENDING'
+                WHERE uuid = ?
+                """)) {
+            ps.setString(1, account.uuid);
+            ps.executeUpdate();
+        }
+
         sender.sendMessage(plugin.color(
-                "&aIP binding reset for " + account.username + "."));
+                "&aAccount reset for " + account.username + "."));
     }
 
     private void ban(
@@ -452,7 +648,7 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         String reason = args.length > 2
-                ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length))
+                ? String.join(" ", Arrays.copyOfRange(args, 2, args.length))
                 : "Banned by administrator";
 
         try (PreparedStatement ps = db.prepareStatement("""
@@ -469,7 +665,9 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         Player online = Bukkit.getPlayer(UUID.fromString(account.uuid));
-        if (online != null) online.kickPlayer(plugin.color("&cBanned: " + reason));
+        if (online != null) {
+            online.kickPlayer(plugin.color("&cBanned: " + reason));
+        }
 
         sender.sendMessage(plugin.color("&cBanned " + account.username + "."));
     }
@@ -513,6 +711,7 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         int amount;
+
         try {
             amount = Integer.parseInt(args[2]);
         } catch (NumberFormatException exception) {
@@ -526,7 +725,8 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         try (PreparedStatement ps = db.prepareStatement("""
-                INSERT INTO ip_limits (ip_address, max_accounts, updated_by, updated_at)
+                INSERT INTO ip_limits
+                    (ip_address, max_accounts, updated_by, updated_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(ip_address) DO UPDATE SET
                     max_accounts = excluded.max_accounts,
@@ -557,6 +757,7 @@ public final class AdminCommands implements CommandExecutor {
                 """)) {
             ps.setString(1, args[1]);
             int removed = ps.executeUpdate();
+
             sender.sendMessage(plugin.color("&aCleared " + removed
                     + " audit log entries for " + args[1] + "."));
         }
@@ -571,8 +772,12 @@ public final class AdminCommands implements CommandExecutor {
                 ORDER BY last_seen DESC LIMIT 1
                 """)) {
             ps.setString(1, username);
+
             try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) return null;
+                if (!rs.next()) {
+                    return null;
+                }
+
                 return new Account(
                         rs.getString("uuid"),
                         rs.getString("username"),
