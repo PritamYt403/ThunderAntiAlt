@@ -3,44 +3,71 @@ name: Build ThunderAntiAlt
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build Plugin
+  build-1-21:
+    name: Paper 1.21.x (Java 21)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
 
-      - name: Verify Java and Maven
-        run: |
-          java -version
-          mvn -version
-
-      - name: Build ThunderAntiAlt
+      - name: Build Paper 1.21.x
         run: mvn --batch-mode --no-transfer-progress clean package
 
-      - name: Upload plugin JAR
-        uses: actions/upload-artifact@v4
+      - name: Prepare JAR
+        run: |
+          mkdir -p output
+          cp target/ThunderAntiAlt.jar output/ThunderAntiAlt-1.21.jar
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: ThunderAntiAlt-JAR
-          path: target/ThunderAntiAlt.jar
+          name: ThunderAntiAlt-1.21
+          path: output/ThunderAntiAlt-1.21.jar
+          if-no-files-found: error
+          retention-days: 14
+
+  build-26x:
+    name: Paper 26.x (Java 25)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Build Paper 26.x
+        run: |
+          mvn --batch-mode --no-transfer-progress \
+            -Dmaven.compiler.release=25 \
+            -Dpaper.api.version=26.1.2.build-SNAPSHOT \
+            clean package
+
+      - name: Prepare JAR
+        run: |
+          mkdir -p output
+          cp target/ThunderAntiAlt.jar output/ThunderAntiAlt-26x.jar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ThunderAntiAlt-26x
+          path: output/ThunderAntiAlt-26x.jar
           if-no-files-found: error
           retention-days: 14
