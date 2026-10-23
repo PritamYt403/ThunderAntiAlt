@@ -17,6 +17,7 @@ messages:
   account-removed: "&aAccount authorization removed successfully."
   account-reset: "&aIP binding reset. The player must be approved again."
   account-banned: "&cYour account is banned from this server."
+  account-denied-login: "&cYour account was denied. Contact an administrator."
   ip-mismatch: "&cYour account is bound to another IP. Contact an administrator."
   reload-success: "&aConfiguration and messages reloaded."
 
