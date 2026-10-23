@@ -1,3 +1,4 @@
+
 package com.pritamx.thunderantialt;
 
 import org.bukkit.Bukkit;
@@ -72,7 +73,7 @@ public final class AccountListener implements Listener {
                 AccountRecord account = getAccount(db, uuid);
                 PendingRecord pending = getPending(db, uuid);
 
-                // Main accounts may reconnect from another IP.
+                // Main account is always allowed, including from a new IP.
                 if (isMainUuid(db, uuid)) {
                     ensureAccount(db, uuid, username, ip, true);
                     saveMainAccount(db, ip, uuid, username);
@@ -82,6 +83,69 @@ public final class AccountListener implements Listener {
 
                     audit(uuid, username, ip, "MAIN_LOGIN",
                             "Main account login");
+                    return;
+                }
+
+                // DENIED must take priority over authorization.
+                if (pending != null && "DENIED".equals(pending.status)) {
+                    updatePendingAttempt(db, uuid, username, ip);
+
+                    db.commit();
+                    transactionStarted = false;
+
+                    deny(event, "account-denied-login");
+                    audit(uuid, username, ip, "LOGIN_BLOCKED",
+                            "Account status: DENIED");
+                    alertAdmins(username,
+                            "Account was denied by an admin");
+                    return;
+                }
+
+                // Previously approved accounts must not be blocked by
+                // their old APPROVED pending record.
+                if (pending != null
+                        && "APPROVED".equals(pending.status)) {
+
+                    if (!isAuthorizedAlt(db, uuid)) {
+                        db.commit();
+                        transactionStarted = false;
+
+                        deny(event, "approval-required");
+                        return;
+                    }
+
+                    if (account != null
+                            && plugin.getConfig().getBoolean(
+                                    "settings.require-new-ip-approval", true)
+                            && account.ipAddress != null
+                            && !account.ipAddress.equals(ip)) {
+
+                        String mainUuid = findMainForAccount(db, uuid);
+
+                        if (mainUuid == null || mainUuid.isBlank()) {
+                            mainUuid = "UNKNOWN";
+                        }
+
+                        markPending(db, uuid, username, ip, mainUuid);
+
+                        db.commit();
+                        transactionStarted = false;
+
+                        deny(event, "approval-required");
+                        audit(uuid, username, ip, "LOGIN_BLOCKED",
+                                "Approved account attempted login from a new IP");
+                        alertAdmins(username,
+                                "New IP requires approval");
+                        return;
+                    }
+
+                    registerAuthorizedAccount(db, uuid, username, ip);
+
+                    db.commit();
+                    transactionStarted = false;
+
+                    audit(uuid, username, ip, "AUTHORIZED_LOGIN",
+                            "Previously approved account login");
                     return;
                 }
 
@@ -100,6 +164,7 @@ public final class AccountListener implements Listener {
                         }
 
                         markPending(db, uuid, username, ip, mainUuid);
+
                         db.commit();
                         transactionStarted = false;
 
@@ -121,19 +186,14 @@ public final class AccountListener implements Listener {
                     return;
                 }
 
-                // Denied and pending accounts must be reviewed by an admin.
+                // Pending accounts require admin approval.
                 if (pending != null) {
                     updatePendingAttempt(db, uuid, username, ip);
 
                     db.commit();
                     transactionStarted = false;
 
-                    if ("DENIED".equals(pending.status)) {
-                        deny(event, "account-denied-login");
-                    } else {
-                        deny(event, "approval-required");
-                    }
-
+                    deny(event, "approval-required");
                     audit(uuid, username, ip, "LOGIN_BLOCKED",
                             "Account status: " + pending.status);
                     alertAdmins(username,
@@ -224,8 +284,6 @@ public final class AccountListener implements Listener {
                     plugin.getLogger().log(Level.SEVERE,
                             "Could not restore database transaction state", ex);
 
-                    // Only enforce fail-closed if login has not already
-                    // been denied by another check.
                     if (event.getResult() == PlayerLoginEvent.Result.ALLOWED) {
                         handleDatabaseFailure(event);
                     }
@@ -313,7 +371,12 @@ public final class AccountListener implements Listener {
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return rs.getString(1);
+                    String value = rs.getString(1);
+
+                    if (value != null && !value.isBlank()
+                            && !"UNKNOWN".equalsIgnoreCase(value)) {
+                        return value;
+                    }
                 }
             }
         }
