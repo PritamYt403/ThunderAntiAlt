@@ -20,7 +20,8 @@ import java.sql.Statement;
 import java.time.Instant;
 import java.util.Map;
 import java.util.logging.Level;
-
+import com.pritamx.thunderantialt.license.LicenseManager;
+import com.pritamx.thunderantialt.license.LicenseStatus;
 public final class ThunderAntiAlt extends JavaPlugin {
 
     private static final String LICENSE_SHA256 =
