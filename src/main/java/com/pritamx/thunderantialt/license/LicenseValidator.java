@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
   public final class LicenseValidator {
   
   private static final URI API_URI = URI.create(
-  "https://license.axzahost.qzz.io/api/validate"
+  "https://thunderlicense.blockmc.indevs.in/api/validate"
   );
   
   private final HttpClient client = HttpClient.newBuilder()
