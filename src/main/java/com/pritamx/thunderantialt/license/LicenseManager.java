@@ -1,3 +1,4 @@
+
 package com.pritamx.thunderantialt.license;
 
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -5,38 +6,43 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 
 public final class LicenseManager {
 
-private final JavaPlugin plugin;
-private final LicenseValidator validator = new LicenseValidator();
-private File licenseFile;
+    private static final String FIXED_LICENSE_KEY =
+            "THUNDER-PRITAMGAMING-2026113245";
 
-public LicenseManager(JavaPlugin plugin) {
-    this.plugin = plugin;
-}
+    private final JavaPlugin plugin;
 
-public LicenseStatus checkLicense() {
-    licenseFile = new File(plugin.getDataFolder(), "license.yml");
+    public LicenseManager(JavaPlugin plugin) {
+        this.plugin = plugin;
+    }
 
-    try {
-        if (!plugin.getDataFolder().exists()
-                && !plugin.getDataFolder().mkdirs()) {
-            plugin.getLogger().severe(
-                    "Could not create plugin data folder."
-            );
+    public LicenseStatus checkLicense() {
+        File folder = plugin.getDataFolder();
+        File licenseFile = new File(folder, "license.yml");
+
+        if (!folder.exists() && !folder.mkdirs()) {
+            plugin.getLogger().severe("Cannot create plugin folder!");
             return LicenseStatus.UNAVAILABLE;
         }
 
         if (!licenseFile.exists()) {
-            Files.writeString(
-                    licenseFile.toPath(),
-                    "license-key: \"\"\n"
-            );
-            plugin.getLogger().warning(
-                    "Created license.yml. Add your license key and restart."
-            );
+            YamlConfiguration config = new YamlConfiguration();
+            config.set("license-key", "");
+
+            try {
+                config.save(licenseFile);
+                plugin.getLogger().info(
+                        "license.yml created. Add your license key and restart."
+                );
+            } catch (IOException e) {
+                plugin.getLogger().severe(
+                        "Cannot create license.yml: " + e.getMessage()
+                );
+                return LicenseStatus.UNAVAILABLE;
+            }
+
             return LicenseStatus.INVALID;
         }
 
@@ -45,23 +51,11 @@ public LicenseStatus checkLicense() {
 
         String key = config.getString("license-key", "");
 
-        if (key == null || key.isBlank()) {
-            plugin.getLogger().warning(
-                    "Add your license key to plugins/"
-                            + plugin.getName() + "/license.yml"
-            );
+        if (key == null || !FIXED_LICENSE_KEY.equals(key.trim())) {
+            plugin.getLogger().severe("Invalid or missing license key!");
             return LicenseStatus.INVALID;
         }
 
-        return validator.validate(key.trim());
-
-    } catch (IOException exception) {
-        plugin.getLogger().severe(
-                "Could not read or create license.yml: "
-                        + exception.getMessage()
-        );
-        return LicenseStatus.UNAVAILABLE;
+        return LicenseStatus.ACTIVE;
     }
-}
-
 }
