@@ -1,15 +1,40 @@
-ThunderAntiAlt License Module
+# ThunderAntiAlt Offline License
 
-This folder contains the isolated license validation module for ThunderAntiAlt.
+This project uses a local fixed-key license check.
 
-Cloudflare API endpoint:
-"https://thunderantialt-license.h7198083.workers.dev/api/validate"
+**No internet connection or external license API is required.** The plugin does not contact Cloudflare, GitHub, or any remote validation server.
 
-Method: "POST"
+## Setup Instructions
 
-Request JSON:
-"{"key":"YOUR_LICENSE_KEY"}"
+On the first server startup, the plugin automatically creates:
 
-The API response should include "valid" and "status" fields.
+`plugins/ThunderAntiAlt/license.yml`
 
-Never commit real license keys or admin credentials.
+Initially, the file contains:
+
+```yaml
+license-key: ""
+```
+
+Open `license.yml` and enter the fixed license key:
+
+```yaml
+license-key: "THUNDER-PRITAMGAMING-2026113245"
+```
+
+Save the file and restart your Minecraft server.
+
+## License Verification
+
+- Correct license key: Plugin enables.
+- Missing license key: Plugin does not enable.
+- Incorrect license key: Plugin does not enable.
+- License verification works completely offline.
+
+## Security Note
+
+This is a basic offline license check, not strong anti-piracy protection. The expected key is embedded in the plugin JAR and may be extracted by someone who can inspect or decompile it.
+
+The same fixed key is shared across installations using this build.
+
+Never commit private server data or database backups.
