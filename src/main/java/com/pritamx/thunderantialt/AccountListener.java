@@ -29,7 +29,9 @@ public final class AccountListener implements Listener {
         String username = event.getPlayer().getName();
 
         InetAddress address = event.getAddress();
-        String ip = address == null ? "UNKNOWN" : address.getHostAddress();
+        String ip = address == null
+                ? "UNKNOWN"
+                : address.getHostAddress();
 
         synchronized (plugin.getDatabaseLock()) {
 
@@ -42,71 +44,122 @@ public final class AccountListener implements Listener {
 
             try {
 
+                if (db.isClosed()) {
+                    deny(event, "database-error");
+                    return;
+                }
+
+                // Check exact account ban.
                 if (isBanned(db, uuid)) {
+
                     deny(event, "account-banned");
-                    audit(uuid, username, ip,
-                            "LOGIN_BLOCKED", "Account UUID is banned.");
+
+                    audit(
+                            uuid, username, ip,
+                            "LOGIN_BLOCKED",
+                            "Account UUID is banned."
+                    );
+
                     return;
                 }
 
                 boolean isMain = isMainAccount(db, uuid);
                 String ownerUuid = getAuthorizedOwner(db, uuid);
 
+                // A UUID cannot be both Main and Alt.
                 if (isMain && ownerUuid != null) {
+
                     deny(event, "database-error");
-                    audit(uuid, username, ip,
+
+                    audit(
+                            uuid, username, ip,
                             "LOGIN_BLOCKED",
-                            "Conflicting Main and Alt records.");
+                            "Conflicting Main and Alt records."
+                    );
+
                     return;
                 }
 
+                // Registered Main account.
                 if (isMain) {
+
                     updateMainLastSeen(db, uuid, username);
-                    audit(uuid, username, ip,
-                            "MAIN_LOGIN", "Registered Main account.");
+
+                    audit(
+                            uuid, username, ip,
+                            "MAIN_LOGIN",
+                            "Registered Main account."
+                    );
+
                     return;
                 }
 
+                // Authorized Alt account.
                 if (ownerUuid != null) {
 
                     if (!isMainAccount(db, ownerUuid)) {
+
                         deny(event, "database-error");
-                        audit(uuid, username, ip,
+
+                        audit(
+                                uuid, username, ip,
                                 "LOGIN_BLOCKED",
-                                "Alt owner does not exist.");
+                                "Alt owner does not exist."
+                        );
+
                         return;
                     }
 
+                    // Main ban also blocks every linked Alt.
                     if (isBanned(db, ownerUuid)) {
+
                         deny(event, "account-banned");
-                        audit(uuid, username, ip,
+
+                        audit(
+                                uuid, username, ip,
                                 "LOGIN_BLOCKED",
-                                "Linked Main account is banned: " + ownerUuid);
+                                "Linked Main account is banned: "
+                                        + ownerUuid
+                        );
+
                         return;
                     }
 
                     updateAltLastSeen(db, uuid, username);
-                    audit(uuid, username, ip,
+
+                    audit(
+                            uuid, username, ip,
                             "AUTHORIZED_ALT_LOGIN",
-                            "Authorized Alt. Main UUID: " + ownerUuid);
+                            "Authorized Alt. Main UUID: " + ownerUuid
+                    );
+
                     return;
                 }
 
+                // Check denied account status.
                 String pendingStatus = getPendingStatus(db, uuid);
 
                 if ("DENIED".equalsIgnoreCase(pendingStatus)) {
+
                     deny(event, "account-denied-login");
-                    audit(uuid, username, ip,
+
+                    audit(
+                            uuid, username, ip,
                             "LOGIN_BLOCKED",
-                            "Account approval was denied.");
+                            "Account approval was denied."
+                    );
+
                     return;
                 }
 
+                // Store unknown account for admin approval.
                 recordPendingAccount(db, uuid, username, ip);
 
-                audit(uuid, username, ip,
+                audit(
+                        uuid, username, ip,
                         "ALT_PENDING",
-                        "Unknown UUID stored for admin review.");
+                        "Unknown UUID stored for admin review."
+                );
 
                 deny(event, "approval-required");
 
@@ -118,6 +171,7 @@ public final class AccountListener implements Listener {
                         exception
                 );
 
+                // Fail closed on database errors.
                 deny(event, "database-error");
             }
         }
@@ -127,8 +181,10 @@ public final class AccountListener implements Listener {
             throws SQLException {
 
         try (PreparedStatement ps = db.prepareStatement("""
-                SELECT 1 FROM account_bans
-                WHERE player_uuid = ? LIMIT 1
+                SELECT 1
+                FROM account_bans
+                WHERE player_uuid = ?
+                LIMIT 1
                 """)) {
 
             ps.setString(1, uuid);
@@ -143,8 +199,10 @@ public final class AccountListener implements Listener {
             throws SQLException {
 
         try (PreparedStatement ps = db.prepareStatement("""
-                SELECT 1 FROM main_accounts
-                WHERE main_uuid = ? LIMIT 1
+                SELECT 1
+                FROM main_accounts
+                WHERE main_uuid = ?
+                LIMIT 1
                 """)) {
 
             ps.setString(1, uuid);
@@ -155,38 +213,54 @@ public final class AccountListener implements Listener {
         }
     }
 
-    private String getAuthorizedOwner(Connection db, String altUuid)
-            throws SQLException {
+    private String getAuthorizedOwner(
+            Connection db,
+            String altUuid
+    ) throws SQLException {
 
         try (PreparedStatement ps = db.prepareStatement("""
-                SELECT owner_uuid FROM authorized_accounts
-                WHERE authorized_uuid = ? LIMIT 1
+                SELECT owner_uuid
+                FROM authorized_accounts
+                WHERE authorized_uuid = ?
+                LIMIT 1
                 """)) {
 
             ps.setString(1, altUuid);
 
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getString("owner_uuid") : null;
+                return rs.next()
+                        ? rs.getString("owner_uuid")
+                        : null;
             }
         }
     }
 
-    private String getPendingStatus(Connection db, String uuid)
-            throws SQLException {
+    private String getPendingStatus(
+            Connection db,
+            String uuid
+    ) throws SQLException {
 
         try (PreparedStatement ps = db.prepareStatement("""
-                SELECT status FROM pending_alt_accounts
-                WHERE uuid = ? LIMIT 1
+                SELECT status
+                FROM pending_alt_accounts
+                WHERE uuid = ?
+                LIMIT 1
                 """)) {
 
             ps.setString(1, uuid);
 
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getString("status") : null;
+                return rs.next()
+                        ? rs.getString("status")
+                        : null;
             }
         }
     }
 
+    /**
+     * Atomically records an unknown account.
+     * Both account records succeed or both are rolled back.
+     */
     private void recordPendingAccount(
             Connection db,
             String uuid,
@@ -194,50 +268,77 @@ public final class AccountListener implements Listener {
             String ip
     ) throws SQLException {
 
-        String now = Instant.now().toString();
+        boolean oldAutoCommit = db.getAutoCommit();
 
-        try (PreparedStatement ps = db.prepareStatement("""
-                INSERT INTO accounts
-                    (uuid, username, ip_address, account_limit,
-                     approved, created_at, last_seen)
-                VALUES (?, ?, ?, 1, 0, ?, ?)
-                ON CONFLICT(uuid) DO UPDATE SET
-                    username = excluded.username,
-                    ip_address = excluded.ip_address,
-                    last_seen = excluded.last_seen
-                """)) {
+        try {
 
-            ps.setString(1, uuid);
-            ps.setString(2, username);
-            ps.setString(3, ip);
-            ps.setString(4, now);
-            ps.setString(5, now);
-            ps.executeUpdate();
-        }
+            db.setAutoCommit(false);
 
-        try (PreparedStatement ps = db.prepareStatement("""
-                INSERT INTO pending_alt_accounts
-                    (uuid, username, ip_address, main_uuid,
-                     first_seen, last_seen, attempts, status)
-                VALUES (?, ?, ?, 'UNKNOWN', ?, ?, 1, 'PENDING')
-                ON CONFLICT(uuid) DO UPDATE SET
-                    username = excluded.username,
-                    ip_address = excluded.ip_address,
-                    last_seen = excluded.last_seen,
-                    attempts = pending_alt_accounts.attempts + 1,
-                    status = CASE
-                        WHEN pending_alt_accounts.status = 'DENIED'
-                        THEN 'DENIED'
-                        ELSE 'PENDING'
-                    END
-                """)) {
+            String now = Instant.now().toString();
 
-            ps.setString(1, uuid);
-            ps.setString(2, username);
-            ps.setString(3, ip);
-            ps.setString(4, now);
-            ps.setString(5, now);
-            ps.executeUpdate();
+            // Store general account information.
+            try (PreparedStatement ps = db.prepareStatement("""
+                    INSERT INTO accounts
+                        (uuid, username, ip_address, account_limit,
+                         approved, created_at, last_seen)
+                    VALUES (?, ?, ?, 1, 0, ?, ?)
+                    ON CONFLICT(uuid) DO UPDATE SET
+                        username = excluded.username,
+                        ip_address = excluded.ip_address,
+                        last_seen = excluded.last_seen
+                    """)) {
+
+                ps.setString(1, uuid);
+                ps.setString(2, username);
+                ps.setString(3, ip);
+                ps.setString(4, now);
+                ps.setString(5, now);
+
+                ps.executeUpdate();
+            }
+
+            // Store pending approval request.
+            try (PreparedStatement ps = db.prepareStatement("""
+                    INSERT INTO pending_alt_accounts
+                        (uuid, username, ip_address, main_uuid,
+                         first_seen, last_seen, attempts, status)
+                    VALUES (?, ?, ?, 'UNKNOWN', ?, ?, 1, 'PENDING')
+                    ON CONFLICT(uuid) DO UPDATE SET
+                        username = excluded.username,
+                        ip_address = excluded.ip_address,
+                        last_seen = excluded.last_seen,
+                        attempts = pending_alt_accounts.attempts + 1,
+                        status = CASE
+                            WHEN pending_alt_accounts.status = 'DENIED'
+                            THEN 'DENIED'
+                            ELSE 'PENDING'
+                        END
+                    """)) {
+
+                ps.setString(1, uuid);
+                ps.setString(2, username);
+                ps.setString(3, ip);
+                ps.setString(4, now);
+                ps.setString(5, now);
+
+                ps.executeUpdate();
+            }
+
+            db.commit();
+
+        } catch (SQLException exception) {
+
+            try {
+                db.rollback();
+            } catch (SQLException rollbackError) {
+                exception.addSuppressed(rollbackError);
+            }
+
+            throw exception;
+
+        } finally {
+
+            db.setAutoCommit(oldAutoCommit);
         }
     }
 
@@ -256,6 +357,7 @@ public final class AccountListener implements Listener {
             ps.setString(1, username);
             ps.setString(2, Instant.now().toString());
             ps.setString(3, uuid);
+
             ps.executeUpdate();
         }
     }
@@ -275,11 +377,13 @@ public final class AccountListener implements Listener {
             ps.setString(1, username);
             ps.setString(2, Instant.now().toString());
             ps.setString(3, uuid);
+
             ps.executeUpdate();
         }
     }
 
     private void deny(PlayerLoginEvent event, String key) {
+
         event.disallow(
                 PlayerLoginEvent.Result.KICK_OTHER,
                 plugin.getMessage(key)
@@ -293,6 +397,13 @@ public final class AccountListener implements Listener {
             String action,
             String details
     ) {
-        plugin.logAudit(uuid, username, ip, action, details);
+
+        plugin.logAudit(
+                uuid,
+                username,
+                ip,
+                action,
+                details
+        );
     }
 }
