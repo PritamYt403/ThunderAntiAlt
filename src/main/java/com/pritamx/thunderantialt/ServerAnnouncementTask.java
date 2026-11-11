@@ -2,7 +2,9 @@
 package com.pritamx.thunderantialt;
 
 import org.bukkit.ChatColor;
+import org.bukkit.Sound;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
@@ -79,14 +81,27 @@ public final class ServerAnnouncementTask {
             return;
         }
 
-        for (String line : lines) {
+        for (Player player : plugin.getServer().getOnlinePlayers()) {
 
-            String formatted = ChatColor.translateAlternateColorCodes(
-                    '&',
-                    prefix + line
+            // Notification sound.
+            player.playSound(
+                    player.getLocation(),
+                    Sound.BLOCK_NOTE_BLOCK_PLING,
+                    0.7f,
+                    1.3f
             );
 
-            plugin.getServer().broadcastMessage(formatted);
+            // Send announcement.
+            for (String line : lines) {
+
+                String formatted =
+                        ChatColor.translateAlternateColorCodes(
+                                '&',
+                                prefix + line
+                        );
+
+                player.sendMessage(formatted);
+            }
         }
     }
 
