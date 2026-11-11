@@ -31,6 +31,8 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
     private LicenseManager licenseManager;
 
+    private ServerAnnouncementTask announcementTask;
+
     private static final int DATABASE_VERSION = 2;
 
     @Override
@@ -121,12 +123,17 @@ public final class ThunderAntiAlt extends JavaPlugin {
         getCommand("thunderantialt")
                 .setExecutor(new AdminCommands(this));
 
+        // Start server announcements.
+        announcementTask = new ServerAnnouncementTask(this);
+        announcementTask.start();
+
         getLogger().info("------------------------------------");
         getLogger().info("ThunderAntiAlt enabled successfully.");
         getLogger().info("Database version: " + DATABASE_VERSION);
         getLogger().info("Permanent account storage: enabled");
         getLogger().info("Alt approval storage: enabled");
         getLogger().info("Account ban storage: enabled");
+        getLogger().info("Server announcements: enabled");
         getLogger().info("------------------------------------");
     }
 
@@ -155,6 +162,10 @@ public final class ThunderAntiAlt extends JavaPlugin {
         reloadConfig();
 
         loadMessages();
+
+        if (announcementTask != null) {
+            announcementTask.start();
+        }
     }
 
     /**
@@ -609,6 +620,10 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
     @Override
     public void onDisable() {
+
+        if (announcementTask != null) {
+            announcementTask.stop();
+        }
 
         closeDatabase();
 
