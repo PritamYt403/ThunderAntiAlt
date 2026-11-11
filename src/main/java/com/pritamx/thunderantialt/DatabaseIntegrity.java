@@ -28,7 +28,7 @@ public final class DatabaseIntegrity {
         }
 
         boolean oldAutoCommit = db.getAutoCommit();
-        SQLException originalException = null;
+        Throwable originalException = null;
 
         try {
             db.setAutoCommit(false);
@@ -165,13 +165,74 @@ public final class DatabaseIntegrity {
                         );
                     END
                     """);
+
+                /*
+                 * A Main UUID is permanent while it owns
+                 * authorized Alt accounts.
+                 *
+                 * Changing it would break the ownership
+                 * relationship of existing Alt accounts.
+                 */
+                statement.execute("""
+                    CREATE TRIGGER IF NOT EXISTS
+                    trg_main_protect_uuid_update
+                    BEFORE UPDATE OF main_uuid
+                    ON main_accounts
+                    FOR EACH ROW
+                    WHEN NEW.main_uuid != OLD.main_uuid
+                    AND EXISTS (
+                        SELECT 1
+                        FROM authorized_accounts
+                        WHERE owner_uuid = OLD.main_uuid
+                    )
+                    BEGIN
+                        SELECT RAISE(
+                            ABORT,
+                            'Main UUID cannot be changed while linked Alts exist.'
+                        );
+                    END
+                    """);
+
+                /*
+                 * Prevent empty account identifiers.
+                 */
+                statement.execute("""
+                    CREATE TRIGGER IF NOT EXISTS
+                    trg_alt_validate_insert
+                    BEFORE INSERT ON authorized_accounts
+                    FOR EACH ROW
+                    WHEN TRIM(NEW.owner_uuid) = ''
+                      OR TRIM(NEW.authorized_uuid) = ''
+                    BEGIN
+                        SELECT RAISE(
+                            ABORT,
+                            'Account UUID values cannot be empty.'
+                        );
+                    END
+                    """);
+
+                statement.execute("""
+                    CREATE TRIGGER IF NOT EXISTS
+                    trg_alt_validate_update
+                    BEFORE UPDATE OF owner_uuid, authorized_uuid
+                    ON authorized_accounts
+                    FOR EACH ROW
+                    WHEN TRIM(NEW.owner_uuid) = ''
+                      OR TRIM(NEW.authorized_uuid) = ''
+                    BEGIN
+                        SELECT RAISE(
+                            ABORT,
+                            'Account UUID values cannot be empty.'
+                        );
+                    END
+                    """);
             }
 
             verifyExistingRelationships(db);
 
             db.commit();
 
-        } catch (SQLException exception) {
+        } catch (SQLException | RuntimeException | Error exception) {
 
             originalException = exception;
 
@@ -200,8 +261,8 @@ public final class DatabaseIntegrity {
     }
 
     /**
-     * Checks for orphan Alt owners and conflicting
-     * Main/Alt records.
+     * Checks for orphan Alt owners, conflicting
+     * Main/Alt records and invalid empty identifiers.
      */
     private static void verifyExistingRelationships(Connection db)
             throws SQLException {
@@ -238,6 +299,24 @@ public final class DatabaseIntegrity {
             if (rs.next()) {
                 throw new SQLException(
                         "Conflicting Main/Alt registration detected. UUID: "
+                                + rs.getString("authorized_uuid")
+                );
+            }
+        }
+
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT authorized_uuid, owner_uuid
+                FROM authorized_accounts
+                WHERE TRIM(authorized_uuid) = ''
+                   OR TRIM(owner_uuid) = ''
+                LIMIT 1
+                """);
+             ResultSet rs = ps.executeQuery()) {
+
+            if (rs.next()) {
+                throw new SQLException(
+                        "Empty account UUID detected in authorized_accounts. "
+                                + "Alt UUID: "
                                 + rs.getString("authorized_uuid")
                 );
             }
