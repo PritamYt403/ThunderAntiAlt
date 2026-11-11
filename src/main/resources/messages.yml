@@ -1,3 +1,4 @@
+
 prefix: "&8[&6ThunderAntiAlt&8] "
 
 messages:
@@ -9,19 +10,18 @@ messages:
   unknown-command: "&cUnknown command. Use /ta help."
   database-error: "&cA database error occurred. Contact an administrator."
 
-  account-limit: "&cYour IP has reached the account limit."
   approval-required: "&eYour account is pending admin approval."
   account-registered: "&aYour account has been registered."
   account-authorized: "&aAccount authorization updated successfully."
   account-removed: "&aAccount authorization removed successfully."
   account-denied-login: "&cYour account was denied. Contact an administrator."
-  ip-mismatch: "&cYour account is bound to another IP. Contact an administrator."
+  account-banned: "&cThis account or its Main Account is banned."
   reload-success: "&aConfiguration and messages reloaded."
 
-  admin-new-account: "&eNew account detected: &f{player} &7(IP: {ip})"
+  admin-new-account: "&eNew account detected: &f{player}"
   admin-blocked-login: "&cBlocked login attempt: &f{player} &7(Reason: {reason})"
   admin-account-approved: "&aApproved account: &f{player}"
-  admin-alt-alert: "&cPossible alt account: &f{player} &7(IP: {ip})"
+  admin-alt-alert: "&cPending account detected: &f{player}"
 
   info-header: "&6--- ThunderAntiAlt Account Info ---"
   info-player: "&ePlayer: &f{player}"
@@ -30,25 +30,21 @@ messages:
   info-approved: "&eApproved: &f{approved}"
   info-created: "&eCreated: &f{created}"
   info-last-seen: "&eLast Seen: &f{last_seen}"
-  info-limit: "&eIP Account Limit: &f{limit}"
-  info-account-count: "&eAccounts on this IP: &f{count}"
-  info-pending-count: "&ePending alts: &f{count}"
 
   pending-header: "&6--- Pending Accounts ---"
   pending-empty: "&7No pending accounts."
-  pending-entry: "&e{player} &7| UUID: &f{uuid} &7| Main: &f{main} &7| IP: &f{ip} &7| Attempts: &f{attempts}"
+  pending-entry: "&e{player} &7| UUID: &f{uuid} &7| Main: &f{main} &7| Attempts: &f{attempts}"
   pending-count: "&ePending accounts: &f{count}"
   account-denied: "&cDenied account: &f{player}"
   account-not-pending: "&cThat account is not pending approval."
 
-  limit-updated: "&aIP account limit set to &f{limit}&a for &f{player}&a."
-
   help-header: "&6--- ThunderAntiAlt Commands ---"
+  help-setmain: "&e/ta setmain <uuid> <username> &7- Register Main Account"
+  help-pending: "&e/ta pending &7- View pending accounts"
+  help-approve: "&e/ta approve <alt-uuid> <main-uuid> &7- Approve an Alt"
+  help-deny: "&e/ta deny <alt-uuid> &7- Deny an Alt"
+  help-info: "&e/ta info <uuid> &7- View account information"
+  help-removeuser: "&e/ta removeuser <alt-uuid> &7- Remove Alt authorization"
+  help-ban: "&e/ta ban <uuid> [reason] &7- Ban an account"
+  help-unban: "&e/ta unban <uuid> &7- Unban an account"
   help-reload: "&e/ta reload &7- Reload configuration and messages"
-  help-adduser: "&e/ta adduser <player> <owner> &7- Authorize an extra account"
-  help-info: "&e/ta info <player> &7- View account information"
-  help-pending: "&e/ta pending &7- View pending alt accounts"
-  help-approve: "&e/ta approve <player> &7- Approve an account"
-  help-deny: "&e/ta deny <player> &7- Deny an account"
-  help-removeuser: "&e/ta removeuser <player> &7- Remove extra-account authorization"
-  help-limit: "&e/ta limit <player> <number> &7- Set an IP account limit"
