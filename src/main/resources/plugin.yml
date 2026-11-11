@@ -3,13 +3,13 @@ name: ThunderAntiAlt
 version: '2026.0.2'
 main: com.pritamx.thunderantialt.ThunderAntiAlt
 api-version: '1.21'
-author: PritamGaming 
+author: PritamGaming
 description: Advanced Anti-Alt Account Protection System
 
 commands:
   thunderantialt:
     description: ThunderAntiAlt administration commands
-    usage: "/ta <setmain|pending|approve|deny|info|removeuser|ban|unban|reload>"
+    usage: "/ta <help|setmain|pending|approve|deny|info|removeuser|ban|unban|reload>"
     aliases:
       - ta
 
