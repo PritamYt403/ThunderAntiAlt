@@ -1,5 +1,5 @@
 
-prefix: "&8[&6ThunderAntiAlt&8] "
+prefix: "&8[&6ThunderAntiAlt&8] &r"
 
 messages:
   player-only: "&cThis command can only be used by a player."
@@ -48,3 +48,9 @@ messages:
   help-ban: "&e/ta ban <uuid> [reason] &7- Ban an account"
   help-unban: "&e/ta unban <uuid> &7- Unban an account"
   help-reload: "&e/ta reload &7- Reload configuration and messages"
+
+  server-promo:
+    - "&6&lThunderAntiAlt &8» &fThis server is protected by &6ThunderAntiAlt&f."
+    - "&7Developed by &e&lPritamGaming&7."
+    - "&fNeed advanced Anti-Alt protection for your server?"
+    - "&aContact Discord: &b&lpritamgaming99"
