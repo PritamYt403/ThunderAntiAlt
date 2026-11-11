@@ -28,16 +28,15 @@ public final class DatabaseIntegrity {
         }
 
         boolean oldAutoCommit = db.getAutoCommit();
+        SQLException originalException = null;
 
         try {
             db.setAutoCommit(false);
 
-            // Verify existing records before installing protection.
             verifyExistingRelationships(db);
 
             try (Statement statement = db.createStatement()) {
 
-                // An Alt must belong to an existing Main.
                 statement.execute("""
                     CREATE TRIGGER IF NOT EXISTS
                     trg_alt_owner_insert
@@ -75,7 +74,6 @@ public final class DatabaseIntegrity {
                     END
                     """);
 
-                // A Main cannot also be registered as an Alt.
                 statement.execute("""
                     CREATE TRIGGER IF NOT EXISTS
                     trg_alt_not_main_insert
@@ -113,7 +111,6 @@ public final class DatabaseIntegrity {
                     END
                     """);
 
-                // A Main cannot be created if it is already an Alt.
                 statement.execute("""
                     CREATE TRIGGER IF NOT EXISTS
                     trg_main_not_alt_insert
@@ -151,7 +148,6 @@ public final class DatabaseIntegrity {
                     END
                     """);
 
-                // Prevent deleting a Main while linked Alts exist.
                 statement.execute("""
                     CREATE TRIGGER IF NOT EXISTS
                     trg_main_protect_delete
@@ -171,12 +167,13 @@ public final class DatabaseIntegrity {
                     """);
             }
 
-            // Verify again after installing triggers.
             verifyExistingRelationships(db);
 
             db.commit();
 
         } catch (SQLException exception) {
+
+            originalException = exception;
 
             try {
                 db.rollback();
@@ -188,7 +185,17 @@ public final class DatabaseIntegrity {
 
         } finally {
 
-            db.setAutoCommit(oldAutoCommit);
+            try {
+                db.setAutoCommit(oldAutoCommit);
+
+            } catch (SQLException restoreError) {
+
+                if (originalException != null) {
+                    originalException.addSuppressed(restoreError);
+                } else {
+                    throw restoreError;
+                }
+            }
         }
     }
 
@@ -199,7 +206,6 @@ public final class DatabaseIntegrity {
     private static void verifyExistingRelationships(Connection db)
             throws SQLException {
 
-        // Check Alts whose Main account does not exist.
         try (PreparedStatement ps = db.prepareStatement("""
                 SELECT a.authorized_uuid, a.owner_uuid
                 FROM authorized_accounts a
@@ -220,7 +226,6 @@ public final class DatabaseIntegrity {
             }
         }
 
-        // Check accounts registered as both Main and Alt.
         try (PreparedStatement ps = db.prepareStatement("""
                 SELECT a.authorized_uuid
                 FROM authorized_accounts a
