@@ -1,45 +1,34 @@
 
 settings:
-  # Maximum accounts allowed per IP
+  # Legacy compatibility
   max-accounts-per-ip: 1
-
-  # Require admin approval for new alternate accounts
   require-new-ip-approval: true
-
-  # Notify online admins about security events
   alert-admins: true
-
-  # Log blocked login attempts
   log-blocked-attempts: true
-
-  # Log successful account logins
   log-successful-logins: true
-
-  # Enable account registration tracking
   account-tracking: true
-
-  # Enable pending alternate account approval
   pending-approval: true
 
 database:
-  # Database file inside the plugin data folder
   file: accounts.db
 
 security:
-  # Deny login when the database cannot be checked
   fail-closed-on-database-error: true
-
-  # Mask IP addresses in general player information
   mask-ip-in-general-info: true
-
-  # Prevent an unauthorized account from joining
   block-unauthorized-accounts: true
 
 proxy:
-  # Proxy integration requires actual implementation
   enabled: false
   type: NONE
 
 floodgate:
-  # Floodgate integration requires actual implementation
   enabled: false
+
+# Professional Server Announcements
+announcements:
+  # Enable or disable automatic announcements
+  enabled: true
+
+  # Announcement interval in seconds
+  # 300 seconds = 5 minutes
+  interval-seconds: 300
