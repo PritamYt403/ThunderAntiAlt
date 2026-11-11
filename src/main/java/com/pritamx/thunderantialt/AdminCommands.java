@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.logging.Level;
 
 public final class AdminCommands implements CommandExecutor {
 
@@ -86,7 +87,7 @@ public final class AdminCommands implements CommandExecutor {
             } catch (SQLException ex) {
 
                 plugin.getLogger().log(
-                        java.util.logging.Level.SEVERE,
+                        Level.SEVERE,
                         "Admin command database error.",
                         ex
                 );
@@ -131,8 +132,8 @@ public final class AdminCommands implements CommandExecutor {
 
     /**
      * Executes database operations atomically.
-     * Preserves the original SQL exception if rollback
-     * or auto-commit restoration also fails.
+     * Preserves the original failure if rollback or
+     * auto-commit restoration also fails.
      */
     private void executeTransaction(
             Connection db,
@@ -140,19 +141,18 @@ public final class AdminCommands implements CommandExecutor {
     ) throws SQLException {
 
         boolean oldAutoCommit = db.getAutoCommit();
-        SQLException originalException = null;
+        Throwable originalFailure = null;
 
         try {
-
             db.setAutoCommit(false);
 
             transaction.execute();
 
             db.commit();
 
-        } catch (SQLException ex) {
+        } catch (SQLException | RuntimeException | Error ex) {
 
-            originalException = ex;
+            originalFailure = ex;
 
             try {
                 db.rollback();
@@ -169,8 +169,8 @@ public final class AdminCommands implements CommandExecutor {
 
             } catch (SQLException restoreError) {
 
-                if (originalException != null) {
-                    originalException.addSuppressed(restoreError);
+                if (originalFailure != null) {
+                    originalFailure.addSuppressed(restoreError);
                 } else {
                     throw restoreError;
                 }
@@ -687,7 +687,7 @@ public final class AdminCommands implements CommandExecutor {
     }
 
     // --------------------------------------------------
-    // BAN / UNBAN
+    // BAN
     // --------------------------------------------------
 
     private void ban(
@@ -719,24 +719,27 @@ public final class AdminCommands implements CommandExecutor {
                 ? String.join(" ", Arrays.copyOfRange(args, 2, args.length))
                 : "Banned by administrator";
 
-        try (PreparedStatement ps = db.prepareStatement("""
-                INSERT INTO account_bans
-                    (player_uuid, username, reason, banned_by, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(player_uuid) DO UPDATE SET
-                    username = excluded.username,
-                    reason = excluded.reason,
-                    banned_by = excluded.banned_by,
-                    created_at = excluded.created_at
-                """)) {
+        executeTransaction(db, () -> {
 
-            ps.setString(1, uuid);
-            ps.setString(2, account.username);
-            ps.setString(3, reason);
-            ps.setString(4, sender.getName());
-            ps.setString(5, Instant.now().toString());
-            ps.executeUpdate();
-        }
+            try (PreparedStatement ps = db.prepareStatement("""
+                    INSERT INTO account_bans
+                        (player_uuid, username, reason, banned_by, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(player_uuid) DO UPDATE SET
+                        username = excluded.username,
+                        reason = excluded.reason,
+                        banned_by = excluded.banned_by,
+                        created_at = excluded.created_at
+                    """)) {
+
+                ps.setString(1, uuid);
+                ps.setString(2, account.username);
+                ps.setString(3, reason);
+                ps.setString(4, sender.getName());
+                ps.setString(5, Instant.now().toString());
+                ps.executeUpdate();
+            }
+        });
 
         plugin.logAudit(
                 uuid,
@@ -750,6 +753,7 @@ public final class AdminCommands implements CommandExecutor {
         affectedUuids.add(uuid);
 
         if (isMain(db, uuid)) {
+
             try (PreparedStatement ps = db.prepareStatement("""
                     SELECT authorized_uuid
                     FROM authorized_accounts
@@ -805,6 +809,10 @@ public final class AdminCommands implements CommandExecutor {
         ));
     }
 
+    // --------------------------------------------------
+    // UNBAN
+    // --------------------------------------------------
+
     private void unban(
             CommandSender sender,
             Connection db,
@@ -830,19 +838,25 @@ public final class AdminCommands implements CommandExecutor {
             return;
         }
 
-        try (PreparedStatement ps = db.prepareStatement("""
-                DELETE FROM account_bans
-                WHERE player_uuid = ?
-                """)) {
+        int[] deletedRows = {0};
 
-            ps.setString(1, uuid);
+        executeTransaction(db, () -> {
 
-            if (ps.executeUpdate() == 0) {
-                sender.sendMessage(plugin.color(
-                        "&eThis account is not banned."
-                ));
-                return;
+            try (PreparedStatement ps = db.prepareStatement("""
+                    DELETE FROM account_bans
+                    WHERE player_uuid = ?
+                    """)) {
+
+                ps.setString(1, uuid);
+                deletedRows[0] = ps.executeUpdate();
             }
+        });
+
+        if (deletedRows[0] == 0) {
+            sender.sendMessage(plugin.color(
+                    "&eThis account is not banned."
+            ));
+            return;
         }
 
         plugin.logAudit(
