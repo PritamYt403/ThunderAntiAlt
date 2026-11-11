@@ -652,7 +652,6 @@ public final class AdminCommands implements CommandExecutor {
             db.setAutoCommit(oldAutoCommit);
         }
 
-        // Immediately disconnect the Alt if it is online.
         Player onlinePlayer = Bukkit.getPlayer(UUID.fromString(uuid));
 
         if (onlinePlayer != null && onlinePlayer.isOnline()) {
@@ -734,8 +733,6 @@ public final class AdminCommands implements CommandExecutor {
                 reason + " | By " + sender.getName()
         );
 
-        // Kick the banned account and, if it is a Main,
-        // every currently online authorized Alt.
         List<String> affectedUuids = new ArrayList<>();
         affectedUuids.add(uuid);
 
@@ -879,19 +876,27 @@ public final class AdminCommands implements CommandExecutor {
 
         String status = "UNREGISTERED";
         String mainUuid = "-";
+        boolean inheritedBan = false;
 
         if (isMain(db, uuid)) {
+
             status = "MAIN";
             mainUuid = uuid;
 
         } else {
+
             String owner = getAuthorizedOwner(db, uuid);
 
             if (owner != null) {
+
                 status = "APPROVED";
                 mainUuid = owner;
 
+                // Check whether the linked Main Account is banned.
+                inheritedBan = isBanned(db, owner);
+
             } else {
+
                 String pendingStatus = getPendingStatus(db, uuid);
                 String pendingMain = getPendingMain(db, uuid);
 
@@ -905,7 +910,8 @@ public final class AdminCommands implements CommandExecutor {
             }
         }
 
-        if (isBanned(db, uuid)) {
+        // Account is banned if it or its authorized Main is banned.
+        if (isBanned(db, uuid) || inheritedBan) {
             status = "BANNED";
         }
 
