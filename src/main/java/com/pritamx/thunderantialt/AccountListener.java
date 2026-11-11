@@ -269,7 +269,7 @@ public final class AccountListener implements Listener {
     ) throws SQLException {
 
         boolean oldAutoCommit = db.getAutoCommit();
-        SQLException originalException = null;
+        Throwable originalException = null;
 
         try {
 
@@ -310,7 +310,7 @@ public final class AccountListener implements Listener {
                         last_seen = excluded.last_seen,
                         attempts = pending_alt_accounts.attempts + 1,
                         status = CASE
-                            WHEN pending_alt_accounts.status = 'DENIED'
+                            WHEN UPPER(pending_alt_accounts.status) = 'DENIED'
                             THEN 'DENIED'
                             ELSE 'PENDING'
                         END
@@ -327,7 +327,7 @@ public final class AccountListener implements Listener {
 
             db.commit();
 
-        } catch (SQLException exception) {
+        } catch (SQLException | RuntimeException | Error exception) {
 
             originalException = exception;
 
@@ -354,23 +354,91 @@ public final class AccountListener implements Listener {
         }
     }
 
+    /**
+     * Updates Main account information in both tables.
+     * Keeps /ta info data synchronized.
+     */
     private void updateMainLastSeen(
             Connection db,
             String uuid,
             String username
     ) throws SQLException {
 
-        try (PreparedStatement ps = db.prepareStatement("""
-                UPDATE main_accounts
-                SET username = ?, last_seen = ?
-                WHERE main_uuid = ?
-                """)) {
+        boolean oldAutoCommit = db.getAutoCommit();
+        Throwable originalException = null;
 
-            ps.setString(1, username);
-            ps.setString(2, Instant.now().toString());
-            ps.setString(3, uuid);
+        try {
 
-            ps.executeUpdate();
+            db.setAutoCommit(false);
+
+            String now = Instant.now().toString();
+
+            try (PreparedStatement ps = db.prepareStatement("""
+                    UPDATE main_accounts
+                    SET username = ?, last_seen = ?
+                    WHERE main_uuid = ?
+                    """)) {
+
+                ps.setString(1, username);
+                ps.setString(2, now);
+                ps.setString(3, uuid);
+
+                int updated = ps.executeUpdate();
+
+                if (updated != 1) {
+                    throw new SQLException(
+                            "Expected one Main account row, updated: "
+                                    + updated
+                    );
+                }
+            }
+
+            try (PreparedStatement ps = db.prepareStatement("""
+                    UPDATE accounts
+                    SET username = ?, last_seen = ?
+                    WHERE uuid = ?
+                    """)) {
+
+                ps.setString(1, username);
+                ps.setString(2, now);
+                ps.setString(3, uuid);
+
+                int updated = ps.executeUpdate();
+
+                if (updated != 1) {
+                    throw new SQLException(
+                            "Main account is missing from accounts table: "
+                                    + uuid
+                    );
+                }
+            }
+
+            db.commit();
+
+        } catch (SQLException | RuntimeException | Error exception) {
+
+            originalException = exception;
+
+            try {
+                db.rollback();
+            } catch (SQLException rollbackError) {
+                exception.addSuppressed(rollbackError);
+            }
+
+            throw exception;
+
+        } finally {
+
+            try {
+                db.setAutoCommit(oldAutoCommit);
+            } catch (SQLException restoreError) {
+
+                if (originalException != null) {
+                    originalException.addSuppressed(restoreError);
+                } else {
+                    throw restoreError;
+                }
+            }
         }
     }
 
