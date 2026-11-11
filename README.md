@@ -1,91 +1,96 @@
+
 # ⚡ ThunderAntiAlt
 
-**Minecraft Alternate Account Management & Authorization Plugin**
+**Minecraft Main Account & Alternate Account Authorization Plugin**
 
-Made by Pritam.
+Developed by Pritam.
 
-ThunderAntiAlt is a Minecraft server plugin designed to help server administrators manage alternate accounts, review account authorization requests, enforce configurable IP-based account limits, and maintain account activity logs.
+ThunderAntiAlt helps server administrators manage Main Accounts, approve alternate accounts, maintain account records, and enforce account authorization rules.
 
 ## ✨ Features
 
 - SQLite database for persistent account records
-- Main-account and alternate-account tracking
-- Pending alternate-account approval workflow
+- Main Account and Alt Account relationships
+- Pending account approval workflow
 - Admin approval and denial controls
-- Configurable account limits per IP address
-- Account removal and information lookup
-- Audit logs for account-related actions
-- Admin notifications for account events
-- Permission-based administrative access
-- Configurable messages in `messages.yml`
-- Settings managed through `config.yml`
-- Database error handling with fail-closed configuration
-- Offline fixed license-key verification
+- Main and Alt account ban management
+- Account information lookup
+- Account activity and audit logging
+- Admin notifications
+- Permission-based administrative commands
+- Configurable messages
+- Database integrity checks and security triggers
+- Fail-closed handling for database errors
 
 ## 📥 Installation
 
-1. Download the compatible `ThunderAntiAlt.jar` from GitHub Releases or Actions artifacts.
+1. Download the compatible JAR from GitHub Actions artifacts or Releases.
 2. Stop your Minecraft server.
-3. Upload the JAR to your server's `plugins/` directory.
-4. Start the server once. The plugin will generate its configuration files.
-5. Stop the server.
-6. Open `plugins/ThunderAntiAlt/license.yml`.
-7. Add the fixed license key:
+3. Upload the JAR into the server's `plugins/` directory.
+4. Start the server and allow the plugin to generate its files.
+5. Configure the generated files as required.
+6. Restart the server.
 
-   ```yaml
-   license-key: "THUNDER-PRITAMGAMING-2026113245"
-   ```
-
-8. Save the file.
-9. Start your server again.
-
-**Important:** The plugin will enable only if the license key matches the expected key embedded in the plugin JAR.
-
-License verification is completely offline. No Cloudflare Worker, external API, or internet connection is required.
+Back up your database and configuration before updating.
 
 ## 🎮 Admin Commands
 
 | Command | Description |
 |---|---|
-| `/ta reload` | Reload plugin settings |
-| `/ta adduser` | Add or register an account |
-| `/ta info` | View account information |
-| `/ta pending` | View pending account requests |
-| `/ta approve` | Approve an alternate-account request |
-| `/ta deny` | Deny an alternate-account request |
-| `/ta removeuser` | Remove an account |
-| `/ta limit` | Manage account limits |
+| `/ta help` | Display available commands |
+| `/ta setmain <uuid> <username>` | Register a Main Account |
+| `/ta pending` | View pending accounts |
+| `/ta approve <alt-uuid> <main-uuid>` | Approve and link an Alt |
+| `/ta deny <alt-uuid>` | Deny an account |
+| `/ta info <uuid>` | View account information |
+| `/ta removeuser <alt-uuid>` | Remove Alt authorization |
+| `/ta ban <uuid> [reason]` | Ban an account |
+| `/ta unban <uuid>` | Unban an account |
+| `/ta reload` | Reload configuration and messages |
 
-Use `/ta` without arguments to display command help. Check the installed version's command usage for required arguments.
+Administrative commands require the `thunderantialt.admin` permission.
 
 ## ⚙️ Configuration
 
-The plugin generates or uses these files:
+The plugin uses:
 
-- `config.yml` — Database path, account limits, and security settings.
+- `config.yml` — Database and security settings.
 - `messages.yml` — Configurable messages.
-- `license.yml` — Offline license-key configuration.
-- SQLite database — Persistent account and audit information.
+- `license.yml` — Existing license configuration.
+- `accounts.db` — SQLite account and audit database.
 
-Back up your database and configuration files before updating the plugin.
+Some older IP-related configuration entries are retained for compatibility. Do not treat them as reliable account identity verification or as proof of account ownership.
 
 ## 🔐 Security Notes
 
-- Account records are stored persistently in SQLite.
-- Database failures are handled according to the configured fail-closed policy.
-- IP addresses can be shared by multiple legitimate players.
-- IP-based limits alone cannot reliably identify a player's physical device.
-- The offline license key is shared and embedded in the JAR. It is not a secure per-server entitlement system.
+- Main and Alt account relationships are stored in SQLite.
+- Database integrity checks help prevent invalid account relationships.
+- Main Account bans also apply to linked Alt accounts.
+- Unknown accounts can be held for administrator approval.
+- IP addresses are metadata, not proof of identity.
+- Shared IP addresses do not necessarily mean accounts belong to the same person.
+- In Offline Mode, UUIDs are derived from usernames. A matching username can therefore produce the same offline UUID.
+- ThunderAntiAlt alone cannot prove ownership of a Minecraft account in Offline Mode. A trusted authentication integration, such as ThunderAuth, is needed before treating a login as authenticated.
+
+**Important:** Do not consider an account secure merely because its UUID is registered or approved. Authentication must also succeed.
 
 ## 🛠️ Building from Source
 
-Requirements depend on the target Minecraft version and the project's Maven configuration.
+Requirements:
+
+- Java 21 for the Paper 1.21.x build.
+- Java 25 for the Paper 26.x build.
+- Maven.
+
+Build using:
 
 ```bash
 mvn clean package
 ```
 
-After a successful build, check the project's `target/` directory for the generated JAR.
+The project also provides separate GitHub Actions build jobs for the supported targets.
+
+Generated JAR files are available in the `target/` directory.
 
 ## 👨‍💻 Developer
 
