@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
@@ -24,13 +25,9 @@ import java.util.logging.Level;
 public final class ThunderAntiAlt extends JavaPlugin {
 
     private Connection connection;
-
     private FileConfiguration messages;
-
     private final Object databaseLock = new Object();
-
     private LicenseManager licenseManager;
-
     private ServerAnnouncementTask announcementTask;
 
     private static final int DATABASE_VERSION = 2;
@@ -38,14 +35,12 @@ public final class ThunderAntiAlt extends JavaPlugin {
     @Override
     public void onEnable() {
 
-        // Create plugin directory.
         if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
             getLogger().severe("Could not create plugin directory.");
             disableSelf();
             return;
         }
 
-        // License validation.
         licenseManager = new LicenseManager(this);
 
         LicenseStatus status = licenseManager.checkLicense();
@@ -57,9 +52,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         "License is missing or invalid. Check plugins/ThunderAntiAlt/license.yml."
                 );
             } else {
-                getLogger().severe(
-                        "Could not load the license file."
-                );
+                getLogger().severe("Could not load the license file.");
             }
 
             disableSelf();
@@ -68,21 +61,19 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         getLogger().info("License verified successfully.");
 
-        // Load configuration.
         saveDefaultConfig();
-
         saveResourceIfMissing("messages.yml");
-
         loadMessages();
 
-        // Initialize database and verify security relationships.
         try {
 
             openDatabase();
 
+            // Never silently accept an unknown or newer schema.
+            validateDatabaseVersionBeforeChanges();
+
             createTables();
 
-            // Install SQLite security triggers and verify Main/Alt relationships.
             synchronized (databaseLock) {
                 DatabaseIntegrity.installAndVerify(
                         getDatabaseConnection()
@@ -96,24 +87,19 @@ public final class ThunderAntiAlt extends JavaPlugin {
             getLogger().log(
                     Level.SEVERE,
                     "Database initialization or integrity verification failed. "
-                            + "Plugin startup will be stopped.",
+                            + "Plugin startup will be stopped. Existing data "
+                            + "has not been automatically deleted.",
                     exception
             );
 
             closeDatabase();
-
             disableSelf();
-
             return;
         }
 
-        // Register events and commands.
         PluginManager manager = getServer().getPluginManager();
 
-        manager.registerEvents(
-                new AccountListener(this),
-                this
-        );
+        manager.registerEvents(new AccountListener(this), this);
 
         if (getCommand("thunderantialt") == null) {
 
@@ -122,16 +108,13 @@ public final class ThunderAntiAlt extends JavaPlugin {
             );
 
             closeDatabase();
-
             disableSelf();
-
             return;
         }
 
         getCommand("thunderantialt")
                 .setExecutor(new AdminCommands(this));
 
-        // Start server announcements.
         announcementTask = new ServerAnnouncementTask(this);
         announcementTask.start();
 
@@ -169,7 +152,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
     public void reloadPluginSettings() {
 
         reloadConfig();
-
         loadMessages();
 
         if (announcementTask != null) {
@@ -199,7 +181,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
         try {
 
             String basePath = getDataFolder().getCanonicalPath();
-
             String databasePath = databaseFile.getCanonicalPath();
 
             if (!databasePath.equals(basePath)
@@ -223,10 +204,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
         File parent = databaseFile.getParentFile();
 
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
-
-            throw new SQLException(
-                    "Could not create database directory."
-            );
+            throw new SQLException("Could not create database directory.");
         }
 
         connection = DriverManager.getConnection(
@@ -236,20 +214,137 @@ public final class ThunderAntiAlt extends JavaPlugin {
         try (Statement statement = connection.createStatement()) {
 
             statement.execute("PRAGMA foreign_keys = ON");
-
             statement.execute("PRAGMA busy_timeout = 10000");
-
             statement.execute("PRAGMA journal_mode = WAL");
-
             statement.execute("PRAGMA synchronous = FULL");
-
             statement.execute("PRAGMA temp_store = MEMORY");
         }
     }
 
     /**
-     * Creates and upgrades database tables.
+     * Checks the existing schema version before making schema changes.
      *
+     * Version 0 is accepted only for a genuinely new database.
+     * Unknown old versions and newer versions fail closed.
+     */
+    private void validateDatabaseVersionBeforeChanges()
+            throws SQLException {
+
+        synchronized (databaseLock) {
+
+            boolean metadataExists = tableExists(
+                    connection,
+                    "database_metadata"
+            );
+
+            if (!metadataExists) {
+
+                if (hasExistingApplicationTables(connection)) {
+                    throw new SQLException(
+                            "Existing database has no schema version. "
+                                    + "Automatic migration is unsafe. "
+                                    + "Back up and inspect this database first."
+                    );
+                }
+
+                // A genuinely new database.
+                return;
+            }
+
+            String versionValue = null;
+
+            try (PreparedStatement ps = connection.prepareStatement("""
+                    SELECT metadata_value
+                    FROM database_metadata
+                    WHERE metadata_key = 'schema_version'
+                    LIMIT 1
+                    """);
+                 ResultSet rs = ps.executeQuery()) {
+
+                if (rs.next()) {
+                    versionValue = rs.getString("metadata_value");
+                }
+            }
+
+            if (versionValue == null || versionValue.isBlank()) {
+                throw new SQLException(
+                        "Database schema version is missing."
+                );
+            }
+
+            final int existingVersion;
+
+            try {
+                existingVersion = Integer.parseInt(versionValue);
+            } catch (NumberFormatException exception) {
+                throw new SQLException(
+                        "Invalid database schema version: " + versionValue,
+                        exception
+                );
+            }
+
+            if (existingVersion > DATABASE_VERSION) {
+                throw new SQLException(
+                        "Database schema version " + existingVersion
+                                + " is newer than supported version "
+                                + DATABASE_VERSION + "."
+                );
+            }
+
+            if (existingVersion < DATABASE_VERSION) {
+                throw new SQLException(
+                        "Database schema version " + existingVersion
+                                + " requires an explicit migration to version "
+                                + DATABASE_VERSION
+                                + ". Automatic migration is not implemented. "
+                                + "Database data has been preserved."
+                );
+            }
+        }
+    }
+
+    private boolean hasExistingApplicationTables(Connection db)
+            throws SQLException {
+
+        String[] applicationTables = {
+                "main_accounts",
+                "accounts",
+                "authorized_accounts",
+                "account_bans",
+                "pending_alt_accounts",
+                "audit_logs"
+        };
+
+        for (String table : applicationTables) {
+            if (tableExists(db, table)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean tableExists(Connection db, String table)
+            throws SQLException {
+
+        try (PreparedStatement ps = db.prepareStatement("""
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name = ?
+                LIMIT 1
+                """)) {
+
+            ps.setString(1, table);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /**
+     * Creates the current database schema.
      * Existing account data is preserved.
      */
     private void createTables() throws SQLException {
@@ -257,6 +352,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
         synchronized (databaseLock) {
 
             boolean oldAutoCommit = connection.getAutoCommit();
+            Throwable originalException = null;
 
             try {
 
@@ -264,7 +360,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
                 try (Statement statement = connection.createStatement()) {
 
-                    // Database schema version.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS database_metadata (
                             metadata_key TEXT PRIMARY KEY,
@@ -273,7 +368,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // Permanent Main Accounts.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS main_accounts (
                             main_uuid TEXT PRIMARY KEY,
@@ -283,7 +377,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // All known player accounts.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS accounts (
                             uuid TEXT PRIMARY KEY,
@@ -296,7 +389,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // Main-to-Alt authorization.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS authorized_accounts (
                             owner_uuid TEXT NOT NULL,
@@ -305,7 +397,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // Account bans.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS account_bans (
                             player_uuid TEXT PRIMARY KEY,
@@ -316,7 +407,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // Pending Alt approval requests.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS pending_alt_accounts (
                             uuid TEXT PRIMARY KEY,
@@ -330,7 +420,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // IP limit settings (legacy compatibility).
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS ip_limits (
                             ip_address TEXT PRIMARY KEY,
@@ -340,7 +429,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // Legacy IP Main Account records.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS ip_main_accounts (
                             ip_address TEXT PRIMARY KEY,
@@ -350,7 +438,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // Security audit history.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS audit_logs (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -363,7 +450,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         )
                         """);
 
-                    // Useful indexes.
                     statement.executeUpdate("""
                         CREATE INDEX IF NOT EXISTS idx_accounts_ip
                         ON accounts(ip_address)
@@ -409,7 +495,9 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
                 connection.commit();
 
-            } catch (SQLException exception) {
+            } catch (SQLException | RuntimeException | Error exception) {
+
+                originalException = exception;
 
                 try {
                     connection.rollback();
@@ -421,13 +509,23 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
             } finally {
 
-                connection.setAutoCommit(oldAutoCommit);
+                try {
+                    connection.setAutoCommit(oldAutoCommit);
+                } catch (SQLException restoreError) {
+
+                    if (originalException != null) {
+                        originalException.addSuppressed(restoreError);
+                    } else {
+                        throw restoreError;
+                    }
+                }
             }
         }
     }
 
     /**
-     * Stores the current database schema version.
+     * Stores the current schema version.
+     * Called only after version validation and schema creation.
      */
     private void saveDatabaseVersion() throws SQLException {
 
@@ -443,7 +541,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
 
             ps.setString(1, String.valueOf(DATABASE_VERSION));
-
             ps.setString(2, Instant.now().toString());
 
             ps.executeUpdate();
@@ -451,7 +548,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
     }
 
     /**
-     * Verifies that essential security tables exist.
+     * Verifies required tables and schema version.
      */
     private void verifyDatabase() throws SQLException {
 
@@ -467,26 +564,43 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         for (String table : requiredTables) {
 
-            try (PreparedStatement ps = connection.prepareStatement("""
-                    SELECT 1
-                    FROM sqlite_master
-                    WHERE type = 'table'
-                      AND name = ?
-                    LIMIT 1
-                    """)) {
+            if (!tableExists(connection, table)) {
+                throw new SQLException(
+                        "Required database table is missing: " + table
+                );
+            }
+        }
 
-                ps.setString(1, table);
+        try (PreparedStatement ps = connection.prepareStatement("""
+                SELECT metadata_value
+                FROM database_metadata
+                WHERE metadata_key = 'schema_version'
+                LIMIT 1
+                """);
+             ResultSet rs = ps.executeQuery()) {
 
-                try (var rs = ps.executeQuery()) {
+            if (!rs.next()) {
+                throw new SQLException(
+                        "Database schema version record is missing."
+                );
+            }
 
-                    if (!rs.next()) {
+            int version;
 
-                        throw new SQLException(
-                                "Required database table is missing: "
-                                        + table
-                        );
-                    }
-                }
+            try {
+                version = Integer.parseInt(rs.getString("metadata_value"));
+            } catch (NumberFormatException exception) {
+                throw new SQLException(
+                        "Database schema version is invalid.",
+                        exception
+                );
+            }
+
+            if (version != DATABASE_VERSION) {
+                throw new SQLException(
+                        "Expected database version " + DATABASE_VERSION
+                                + " but found " + version
+                );
             }
         }
 
@@ -540,11 +654,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
         return message;
     }
 
-    public void sendMessage(
-            CommandSender sender,
-            String key
-    ) {
-
+    public void sendMessage(CommandSender sender, String key) {
         sender.sendMessage(getMessage(key));
     }
 
@@ -553,18 +663,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
             String key,
             Map<String, String> replacements
     ) {
-
-        sender.sendMessage(
-                getMessage(key, replacements)
-        );
+        sender.sendMessage(getMessage(key, replacements));
     }
 
     public String color(String text) {
-
-        return ChatColor.translateAlternateColorCodes(
-                '&',
-                text
-        );
+        return ChatColor.translateAlternateColorCodes('&', text);
     }
 
     /**
@@ -581,11 +684,9 @@ public final class ThunderAntiAlt extends JavaPlugin {
         synchronized (databaseLock) {
 
             if (connection == null) {
-
                 getLogger().warning(
                         "Audit event could not be stored: " + action
                 );
-
                 return;
             }
 
@@ -599,19 +700,11 @@ public final class ThunderAntiAlt extends JavaPlugin {
                          connection.prepareStatement(sql)) {
 
                 statement.setString(1, uuid);
-
                 statement.setString(2, username);
-
                 statement.setString(3, ipAddress);
-
                 statement.setString(4, action);
-
                 statement.setString(5, details);
-
-                statement.setString(
-                        6,
-                        Instant.now().toString()
-                );
+                statement.setString(6, Instant.now().toString());
 
                 statement.executeUpdate();
 
@@ -635,9 +728,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         closeDatabase();
 
-        getLogger().info(
-                "ThunderAntiAlt disabled."
-        );
+        getLogger().info("ThunderAntiAlt disabled.");
     }
 
     /**
@@ -650,7 +741,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
             if (connection != null) {
 
                 try {
-
                     connection.close();
 
                 } catch (SQLException exception) {
@@ -662,7 +752,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                     );
 
                 } finally {
-
                     connection = null;
                 }
             }
