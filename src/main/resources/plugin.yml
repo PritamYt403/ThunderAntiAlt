@@ -3,7 +3,7 @@ name: ThunderAntiAlt
 version: '2026.0.2'
 main: com.pritamx.thunderantialt.ThunderAntiAlt
 api-version: '1.21'
-author: Pritam
+author: PritamGaming 
 description: Advanced Anti-Alt Account Protection System
 
 commands:
