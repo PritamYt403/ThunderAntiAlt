@@ -85,9 +85,10 @@ public final class AdminCommands implements CommandExecutor {
 
             } catch (SQLException ex) {
 
-                plugin.getLogger().severe(
-                        "Admin command database error: "
-                                + ex.getMessage()
+                plugin.getLogger().log(
+                        java.util.logging.Level.SEVERE,
+                        "Admin command database error.",
+                        ex
                 );
 
                 plugin.sendMessage(sender, "database-error");
@@ -117,6 +118,64 @@ public final class AdminCommands implements CommandExecutor {
         sender.sendMessage(plugin.color("&e/ta ban <uuid> [reason]"));
         sender.sendMessage(plugin.color("&e/ta unban <uuid>"));
         sender.sendMessage(plugin.color("&e/ta reload"));
+    }
+
+    // --------------------------------------------------
+    // TRANSACTION HELPER
+    // --------------------------------------------------
+
+    @FunctionalInterface
+    private interface SqlTransaction {
+        void execute() throws SQLException;
+    }
+
+    /**
+     * Executes database operations atomically.
+     * Preserves the original SQL exception if rollback
+     * or auto-commit restoration also fails.
+     */
+    private void executeTransaction(
+            Connection db,
+            SqlTransaction transaction
+    ) throws SQLException {
+
+        boolean oldAutoCommit = db.getAutoCommit();
+        SQLException originalException = null;
+
+        try {
+
+            db.setAutoCommit(false);
+
+            transaction.execute();
+
+            db.commit();
+
+        } catch (SQLException ex) {
+
+            originalException = ex;
+
+            try {
+                db.rollback();
+            } catch (SQLException rollbackError) {
+                ex.addSuppressed(rollbackError);
+            }
+
+            throw ex;
+
+        } finally {
+
+            try {
+                db.setAutoCommit(oldAutoCommit);
+
+            } catch (SQLException restoreError) {
+
+                if (originalException != null) {
+                    originalException.addSuppressed(restoreError);
+                } else {
+                    throw restoreError;
+                }
+            }
+        }
     }
 
     // --------------------------------------------------
@@ -171,10 +230,8 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         String now = Instant.now().toString();
-        boolean oldAutoCommit = db.getAutoCommit();
 
-        try {
-            db.setAutoCommit(false);
+        executeTransaction(db, () -> {
 
             try (PreparedStatement ps = db.prepareStatement("""
                     INSERT INTO main_accounts
@@ -215,16 +272,7 @@ public final class AdminCommands implements CommandExecutor {
                 ps.setString(1, uuid);
                 ps.executeUpdate();
             }
-
-            db.commit();
-
-        } catch (SQLException ex) {
-            rollback(db, ex);
-            throw ex;
-
-        } finally {
-            db.setAutoCommit(oldAutoCommit);
-        }
+        });
 
         plugin.logAudit(
                 uuid,
@@ -393,10 +441,8 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         String now = Instant.now().toString();
-        boolean oldAutoCommit = db.getAutoCommit();
 
-        try {
-            db.setAutoCommit(false);
+        executeTransaction(db, () -> {
 
             if (existingOwner == null) {
                 try (PreparedStatement ps = db.prepareStatement("""
@@ -443,16 +489,7 @@ public final class AdminCommands implements CommandExecutor {
                 ps.setString(2, altUuid);
                 ps.executeUpdate();
             }
-
-            db.commit();
-
-        } catch (SQLException ex) {
-            rollback(db, ex);
-            throw ex;
-
-        } finally {
-            db.setAutoCommit(oldAutoCommit);
-        }
+        });
 
         plugin.logAudit(
                 altUuid,
@@ -514,10 +551,7 @@ public final class AdminCommands implements CommandExecutor {
             return;
         }
 
-        boolean oldAutoCommit = db.getAutoCommit();
-
-        try {
-            db.setAutoCommit(false);
+        executeTransaction(db, () -> {
 
             try (PreparedStatement ps = db.prepareStatement("""
                     UPDATE pending_alt_accounts
@@ -546,16 +580,7 @@ public final class AdminCommands implements CommandExecutor {
                 ps.setString(1, uuid);
                 ps.executeUpdate();
             }
-
-            db.commit();
-
-        } catch (SQLException ex) {
-            rollback(db, ex);
-            throw ex;
-
-        } finally {
-            db.setAutoCommit(oldAutoCommit);
-        }
+        });
 
         plugin.logAudit(
                 uuid,
@@ -606,10 +631,7 @@ public final class AdminCommands implements CommandExecutor {
             return;
         }
 
-        boolean oldAutoCommit = db.getAutoCommit();
-
-        try {
-            db.setAutoCommit(false);
+        executeTransaction(db, () -> {
 
             try (PreparedStatement ps = db.prepareStatement("""
                     DELETE FROM authorized_accounts
@@ -641,16 +663,7 @@ public final class AdminCommands implements CommandExecutor {
                 ps.setString(2, uuid);
                 ps.executeUpdate();
             }
-
-            db.commit();
-
-        } catch (SQLException ex) {
-            rollback(db, ex);
-            throw ex;
-
-        } finally {
-            db.setAutoCommit(oldAutoCommit);
-        }
+        });
 
         Player onlinePlayer = Bukkit.getPlayer(UUID.fromString(uuid));
 
@@ -892,7 +905,6 @@ public final class AdminCommands implements CommandExecutor {
                 status = "APPROVED";
                 mainUuid = owner;
 
-                // Check whether the linked Main Account is banned.
                 inheritedBan = isBanned(db, owner);
 
             } else {
@@ -910,7 +922,6 @@ public final class AdminCommands implements CommandExecutor {
             }
         }
 
-        // Account is banned if it or its authorized Main is banned.
         if (isBanned(db, uuid) || inheritedBan) {
             status = "BANNED";
         }
@@ -1073,18 +1084,6 @@ public final class AdminCommands implements CommandExecutor {
 
         } catch (IllegalArgumentException ex) {
             return null;
-        }
-    }
-
-    private void rollback(
-            Connection db,
-            SQLException original
-    ) {
-
-        try {
-            db.rollback();
-        } catch (SQLException rollbackError) {
-            original.addSuppressed(rollbackError);
         }
     }
 
