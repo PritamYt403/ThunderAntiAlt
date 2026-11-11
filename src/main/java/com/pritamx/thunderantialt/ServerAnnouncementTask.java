@@ -12,6 +12,9 @@ import java.util.List;
 
 public final class ServerAnnouncementTask {
 
+    private static final long DEFAULT_INTERVAL_SECONDS = 300L;
+    private static final long MAX_INTERVAL_SECONDS = 2_592_000L;
+
     private final ThunderAntiAlt plugin;
 
     private BukkitTask task;
@@ -25,6 +28,7 @@ public final class ServerAnnouncementTask {
 
         if (!plugin.getConfig().getBoolean(
                 "announcements.enabled", true)) {
+
             plugin.getLogger().info(
                     "Server announcements are disabled."
             );
@@ -32,13 +36,29 @@ public final class ServerAnnouncementTask {
         }
 
         long intervalSeconds = plugin.getConfig().getLong(
-                "announcements.interval-seconds", 300
+                "announcements.interval-seconds",
+                DEFAULT_INTERVAL_SECONDS
         );
 
         if (intervalSeconds < 1) {
-            intervalSeconds = 300;
+            plugin.getLogger().warning(
+                    "Invalid announcement interval. Using default: "
+                            + DEFAULT_INTERVAL_SECONDS + " seconds."
+            );
+
+            intervalSeconds = DEFAULT_INTERVAL_SECONDS;
         }
 
+        if (intervalSeconds > MAX_INTERVAL_SECONDS) {
+            plugin.getLogger().warning(
+                    "Announcement interval exceeds the maximum. "
+                            + "It has been limited to 30 days."
+            );
+
+            intervalSeconds = MAX_INTERVAL_SECONDS;
+        }
+
+        // Safe because intervalSeconds is now bounded.
         long intervalTicks = intervalSeconds * 20L;
 
         task = plugin.getServer().getScheduler().runTaskTimer(
@@ -56,6 +76,11 @@ public final class ServerAnnouncementTask {
 
     private void sendAnnouncement() {
 
+        if (!plugin.isEnabled()) {
+            stop();
+            return;
+        }
+
         if (plugin.getServer().getOnlinePlayers().isEmpty()) {
             return;
         }
@@ -64,6 +89,13 @@ public final class ServerAnnouncementTask {
                 plugin.getDataFolder(),
                 "messages.yml"
         );
+
+        if (!messagesFile.isFile()) {
+            plugin.getLogger().warning(
+                    "messages.yml is missing. Announcement skipped."
+            );
+            return;
+        }
 
         YamlConfiguration messages =
                 YamlConfiguration.loadConfiguration(messagesFile);
@@ -83,7 +115,10 @@ public final class ServerAnnouncementTask {
 
         for (Player player : plugin.getServer().getOnlinePlayers()) {
 
-            // Notification sound.
+            if (player == null || !player.isOnline()) {
+                continue;
+            }
+
             player.playSound(
                     player.getLocation(),
                     Sound.BLOCK_NOTE_BLOCK_PLING,
@@ -91,8 +126,11 @@ public final class ServerAnnouncementTask {
                     1.3f
             );
 
-            // Send announcement.
             for (String line : lines) {
+
+                if (line == null) {
+                    continue;
+                }
 
                 String formatted =
                         ChatColor.translateAlternateColorCodes(
