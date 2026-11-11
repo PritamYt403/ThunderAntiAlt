@@ -177,7 +177,6 @@ public final class AdminCommands implements CommandExecutor {
                 ps.executeUpdate();
             }
 
-            // Also create an account record for admin lookup.
             try (PreparedStatement ps = db.prepareStatement("""
                     INSERT INTO accounts
                         (uuid, username, ip_address, account_limit,
@@ -196,8 +195,6 @@ public final class AdminCommands implements CommandExecutor {
                 ps.executeUpdate();
             }
 
-            // Remove old Pending/Denied Alt request.
-            // This UUID is now a registered Main Account.
             try (PreparedStatement ps = db.prepareStatement("""
                     DELETE FROM pending_alt_accounts
                     WHERE uuid = ?
@@ -498,6 +495,13 @@ public final class AdminCommands implements CommandExecutor {
             return;
         }
 
+        String status = getPendingStatus(db, uuid);
+
+        if (!"PENDING".equalsIgnoreCase(status)) {
+            plugin.sendMessage(sender, "account-not-pending");
+            return;
+        }
+
         boolean oldAutoCommit = db.getAutoCommit();
 
         try {
@@ -508,20 +512,17 @@ public final class AdminCommands implements CommandExecutor {
                     SET status = 'DENIED',
                         last_seen = ?
                     WHERE uuid = ?
+                      AND status = 'PENDING'
                     """)) {
 
                 ps.setString(1, Instant.now().toString());
                 ps.setString(2, uuid);
-                ps.executeUpdate();
-            }
 
-            try (PreparedStatement ps = db.prepareStatement("""
-                    DELETE FROM authorized_accounts
-                    WHERE authorized_uuid = ?
-                    """)) {
-
-                ps.setString(1, uuid);
-                ps.executeUpdate();
+                if (ps.executeUpdate() != 1) {
+                    throw new SQLException(
+                            "Pending account changed during denial."
+                    );
+                }
             }
 
             try (PreparedStatement ps = db.prepareStatement("""
