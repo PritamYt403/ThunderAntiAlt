@@ -269,6 +269,7 @@ public final class AccountListener implements Listener {
     ) throws SQLException {
 
         boolean oldAutoCommit = db.getAutoCommit();
+        SQLException originalException = null;
 
         try {
 
@@ -328,6 +329,8 @@ public final class AccountListener implements Listener {
 
         } catch (SQLException exception) {
 
+            originalException = exception;
+
             try {
                 db.rollback();
             } catch (SQLException rollbackError) {
@@ -338,7 +341,16 @@ public final class AccountListener implements Listener {
 
         } finally {
 
-            db.setAutoCommit(oldAutoCommit);
+            try {
+                db.setAutoCommit(oldAutoCommit);
+            } catch (SQLException restoreError) {
+
+                if (originalException != null) {
+                    originalException.addSuppressed(restoreError);
+                } else {
+                    throw restoreError;
+                }
+            }
         }
     }
 
