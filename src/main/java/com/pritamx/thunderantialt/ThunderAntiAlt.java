@@ -75,12 +75,19 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
         loadMessages();
 
-        // Initialize database.
+        // Initialize database and verify security relationships.
         try {
 
             openDatabase();
 
             createTables();
+
+            // Install SQLite security triggers and verify Main/Alt relationships.
+            synchronized (databaseLock) {
+                DatabaseIntegrity.installAndVerify(
+                        getDatabaseConnection()
+                );
+            }
 
             verifyDatabase();
 
@@ -88,7 +95,8 @@ public final class ThunderAntiAlt extends JavaPlugin {
 
             getLogger().log(
                     Level.SEVERE,
-                    "Database initialization failed.",
+                    "Database initialization or integrity verification failed. "
+                            + "Plugin startup will be stopped.",
                     exception
             );
 
@@ -133,6 +141,7 @@ public final class ThunderAntiAlt extends JavaPlugin {
         getLogger().info("Permanent account storage: enabled");
         getLogger().info("Alt approval storage: enabled");
         getLogger().info("Account ban storage: enabled");
+        getLogger().info("Database relationship protection: enabled");
         getLogger().info("Server announcements: enabled");
         getLogger().info("------------------------------------");
     }
@@ -332,7 +341,6 @@ public final class ThunderAntiAlt extends JavaPlugin {
                         """);
 
                     // Legacy IP Main Account records.
-                    // Kept for migration and backward compatibility.
                     statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS ip_main_accounts (
                             ip_address TEXT PRIMARY KEY,
