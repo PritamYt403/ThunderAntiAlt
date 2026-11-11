@@ -61,7 +61,7 @@ public final class AdminCommands implements CommandExecutor {
 
             Connection db = plugin.getDatabaseConnection();
 
-            if (db == null) {
+            if (db == null || isClosed(db)) {
                 plugin.sendMessage(sender, "database-error");
                 return true;
             }
@@ -95,6 +95,14 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         return true;
+    }
+
+    private boolean isClosed(Connection db) {
+        try {
+            return db.isClosed();
+        } catch (SQLException ex) {
+            return true;
+        }
     }
 
     private void sendHelp(CommandSender sender) {
@@ -644,6 +652,15 @@ public final class AdminCommands implements CommandExecutor {
             db.setAutoCommit(oldAutoCommit);
         }
 
+        // Immediately disconnect the Alt if it is online.
+        Player onlinePlayer = Bukkit.getPlayer(UUID.fromString(uuid));
+
+        if (onlinePlayer != null && onlinePlayer.isOnline()) {
+            onlinePlayer.kickPlayer(plugin.color(
+                    "&cYour Alt authorization has been revoked."
+            ));
+        }
+
         plugin.logAudit(
                 uuid,
                 account.username,
@@ -1035,8 +1052,19 @@ public final class AdminCommands implements CommandExecutor {
 
     private String normalizeUuid(String value) {
 
+        if (value == null) {
+            return null;
+        }
+
         try {
-            return UUID.fromString(value).toString();
+            UUID uuid = UUID.fromString(value);
+
+            if (!uuid.toString().equalsIgnoreCase(value)) {
+                return null;
+            }
+
+            return uuid.toString();
+
         } catch (IllegalArgumentException ex) {
             return null;
         }
