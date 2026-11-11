@@ -1,15 +1,20 @@
 
 package com.pritamx.thunderantialt;
 
+import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -158,7 +163,6 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         String now = Instant.now().toString();
-
         boolean oldAutoCommit = db.getAutoCommit();
 
         try {
@@ -683,7 +687,7 @@ public final class AdminCommands implements CommandExecutor {
         }
 
         String reason = args.length > 2
-                ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length))
+                ? String.join(" ", Arrays.copyOfRange(args, 2, args.length))
                 : "Banned by administrator";
 
         try (PreparedStatement ps = db.prepareStatement("""
@@ -713,8 +717,64 @@ public final class AdminCommands implements CommandExecutor {
                 reason + " | By " + sender.getName()
         );
 
+        // Kick the banned account and, if it is a Main,
+        // every currently online authorized Alt.
+        List<String> affectedUuids = new ArrayList<>();
+        affectedUuids.add(uuid);
+
+        if (isMain(db, uuid)) {
+            try (PreparedStatement ps = db.prepareStatement("""
+                    SELECT authorized_uuid
+                    FROM authorized_accounts
+                    WHERE owner_uuid = ?
+                    """)) {
+
+                ps.setString(1, uuid);
+
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String altUuid = rs.getString("authorized_uuid");
+
+                        if (altUuid != null) {
+                            affectedUuids.add(altUuid);
+                        }
+                    }
+                }
+            }
+        }
+
+        String kickMessage = plugin.color(
+                "&cThis account or its Main Account has been banned."
+        );
+
+        int kicked = 0;
+
+        for (String affectedUuid : affectedUuids) {
+
+            try {
+                Player onlinePlayer = Bukkit.getPlayer(
+                        UUID.fromString(affectedUuid)
+                );
+
+                if (onlinePlayer != null && onlinePlayer.isOnline()) {
+                    onlinePlayer.kickPlayer(kickMessage);
+                    kicked++;
+                }
+
+            } catch (IllegalArgumentException ex) {
+                plugin.getLogger().warning(
+                        "Invalid UUID in account authorization data: "
+                                + affectedUuid
+                );
+            }
+        }
+
         sender.sendMessage(plugin.color(
                 "&cBanned: &f" + account.username
+        ));
+
+        sender.sendMessage(plugin.color(
+                "&eOnline affected accounts kicked: &f" + kicked
         ));
     }
 
