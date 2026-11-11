@@ -196,6 +196,17 @@ public final class AdminCommands implements CommandExecutor {
                 ps.executeUpdate();
             }
 
+            // Remove old Pending/Denied Alt request.
+            // This UUID is now a registered Main Account.
+            try (PreparedStatement ps = db.prepareStatement("""
+                    DELETE FROM pending_alt_accounts
+                    WHERE uuid = ?
+                    """)) {
+
+                ps.setString(1, uuid);
+                ps.executeUpdate();
+            }
+
             db.commit();
 
         } catch (SQLException ex) {
