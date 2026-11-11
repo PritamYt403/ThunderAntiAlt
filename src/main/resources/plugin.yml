@@ -9,7 +9,7 @@ description: Advanced Anti-Alt Account Protection System
 commands:
   thunderantialt:
     description: ThunderAntiAlt administration commands
-    usage: "/ta <reload|adduser|info|pending|approve|deny|removeuser|limit>"
+    usage: "/ta <setmain|pending|approve|deny|info|removeuser|ban|unban|reload>"
     aliases:
       - ta
 
@@ -19,5 +19,5 @@ permissions:
     default: op
 
   thunderantialt.bypass:
-    description: Bypass ThunderAntiAlt account restrictions
+    description: Legacy permission; does not bypass account verification
     default: false
